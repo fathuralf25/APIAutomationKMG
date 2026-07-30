@@ -1,0 +1,14 @@
+{
+    "nomor_transaksi": "AKS-20260401-143022-XKQPLA",
+    "nomor_loan": "LN-2026-00123",
+    "nomor_perjanjian_kredit": "PK-2026-00456",
+    "tanggal_akad": "2026-04-08",
+    "outstanding": 495000000,
+    "kolektibilitas": 1,
+    "suku_bunga": 7.5,
+    "rekening_tujuan": {
+        "nama_bank": "Bank Jatim",
+        "no_rekening": "0012345678",
+        "nama_pemilik": "Budi Santoso"
+    }
+}

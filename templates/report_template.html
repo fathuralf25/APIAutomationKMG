@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>BA System Integration Testing (SIT)</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; color: #333; }
+        .header-section { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .header-title { font-size: 24px; font-weight: bold; }
+        .logo-placeholder { font-weight: bold; font-style: italic; color: #004d99; font-size: 20px; text-align: right; }
+        
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; page-break-inside: avoid; }
+        th, td { border: 1px solid #000; padding: 8px; text-align: left; vertical-align: top; }
+        th { background-color: #003366; color: white; font-weight: bold; width: 25%; }
+        
+        .info-table th { width: 30%; }
+        .info-table td { width: 70%; }
+        
+        .section-title { font-size: 16px; font-weight: bold; margin-top: 20px; margin-bottom: 10px; }
+        
+        .split-table th { background-color: #e6e6e6; color: black; text-align: center; width: 50%; }
+        .split-table td { width: 50%; white-space: pre-wrap; font-family: "Courier New", Courier, monospace; font-size: 12px; background-color: #fafafa; }
+        
+        .db-table th { background-color: #003366; color: white; text-align: left; width: auto; }
+        .db-table td { font-family: "Courier New", Courier, monospace; font-size: 12px; }
+        
+        .page-break { page-break-before: always; }
+        
+        .status-pass { color: green; font-weight: bold; }
+        .status-fail { color: red; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    {% for tc_id, data in evidences.items() %}
+    <div {% if not loop.first %}class="page-break"{% endif %}>
+        <div class="header-section">
+            <div class="logo-placeholder">ASKRINDO<br><span style="font-size:12px; font-weight:normal;">A member of IFG</span></div>
+        </div>
+
+        <table class="info-table">
+            <tr>
+                <th>Test Case Id</th>
+                <td>{{ tc_id }}</td>
+            </tr>
+            <tr>
+                <th>Test Case Name</th>
+                <td>{{ data.tc_name }}</td>
+            </tr>
+            <tr>
+                <th>Date</th>
+                <td>{{ current_date }}</td>
+            </tr>
+            <tr>
+                <th>Status</th>
+                <td class="{% if data.status|lower == 'passed' %}status-pass{% else %}status-fail{% endif %}">{{ data.status }}</td>
+            </tr>
+            <tr>
+                <th>Expected Result</th>
+                <td>{{ data.expected_result }}</td>
+            </tr>
+        </table>
+
+        <div class="section-title">Precondition:</div>
+        <p>1. User sudah memiliki akses.<br>2. Data test tersedia.</p>
+
+        {% set step_counter = 1 %}
+        
+        {% for api in data.api %}
+        <div class="section-title">[Test_Step_{{ step_counter }}]: Hit API ({{ api.method }} {{ api.url }})</div>
+        <table class="split-table">
+            <tr>
+                <th>Request</th>
+                <th>Response</th>
+            </tr>
+            <tr>
+                <td>{{ api.request_payload | tojson(indent=4) }}</td>
+                <td>{{ api.response_json | tojson(indent=4) }}<br><br>Status Code: {{ api.status_code }}</td>
+            </tr>
+        </table>
+        {% set step_counter = step_counter + 1 %}
+        {% endfor %}
+
+        {% for db in data.db %}
+        <div class="section-title">[Test_Step_{{ step_counter }}]: DB Validation</div>
+        <div style="font-family: 'Courier New', Courier, monospace; font-size: 12px; background-color: #f0f0f0; padding: 10px; margin-bottom: 10px; border: 1px solid #ccc;">
+            <strong>Query:</strong> {{ db.query }}
+        </div>
+        <table class="db-table">
+            {% if db.result and db.result|length > 0 %}
+                {% set keys = db.result[0].keys() if db.result[0] is mapping else range(db.result[0]|length) %}
+                <tr>
+                    {% for key in keys %}
+                        <th>{{ key }}</th>
+                    {% endfor %}
+                </tr>
+                {% for row in db.result %}
+                <tr>
+                    {% if row is mapping %}
+                        {% for key in keys %}
+                            <td>{{ row[key] }}</td>
+                        {% endfor %}
+                    {% else %}
+                        {% for val in row %}
+                            <td>{{ val }}</td>
+                        {% endfor %}
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            {% else %}
+                <tr><td>No records found.</td></tr>
+            {% endif %}
+        </table>
+        {% set step_counter = step_counter + 1 %}
+        {% endfor %}
+        
+        {% if data.premi_validation %}
+        <div class="section-title">[Test_Step_{{ step_counter }}]: Tabel Validasi Nilai Premi</div>
+        <table class="db-table">
+            <tr>
+                <th>Response Postman (API)</th>
+                <th>Database</th>
+                <th>UI ACS</th>
+                <th>Status</th>
+            </tr>
+            <tr>
+                <td>Rp {{ "{:,.2f}".format(data.premi_validation.api) }}</td>
+                <td>Rp {{ "{:,.2f}".format(data.premi_validation.db) }}</td>
+                <td>Rp {{ "{:,.2f}".format(data.premi_validation.acs) }}</td>
+                <td class="{% if data.premi_validation.status == 'Passed' %}status-pass{% else %}status-fail{% endif %}">{{ data.premi_validation.status }}</td>
+            </tr>
+        </table>
+        {% set step_counter = step_counter + 1 %}
+        {% endif %}
+        
+        {% if data.epolis %}
+        <div class="section-title">[Test_Step_{{ step_counter }}]: Pengecekan Scan QR & Lampiran E-Polis</div>
+        <div style="font-family: 'Courier New', Courier, monospace; font-size: 12px; background-color: #f0f0f0; padding: 10px; margin-bottom: 10px; border: 1px solid #ccc;">
+            <strong>Terjemahan QR Code:</strong><br>
+            {{ data.epolis.qr_result }}
+        </div>
+        {% for img_path in data.epolis.image_paths %}
+        <div style="margin-top:10px; page-break-inside: avoid; text-align: center;">
+            <img src="file:///{{ img_path }}" alt="E-Polis" style="max-width: 100%; max-height: 90vh; object-fit: contain; border: 1px solid #ccc; display: inline-block;">
+        </div>
+        {% endfor %}
+        {% set step_counter = step_counter + 1 %}
+        {% endif %}
+
+        {% if data.ui %}
+        <div class="section-title">[Test_Step_{{ step_counter }}]: Pengecekan UI (ACS/FMS)</div>
+        {% for ui_ev in data.ui %}
+        <div style="margin-top:10px;">
+            <strong>System: {{ ui_ev.system_name }}</strong><br>
+            <img src="file:///{{ ui_ev.screenshot_path }}" alt="{{ ui_ev.system_name }}" style="max-width: 100%; border: 1px solid #ccc;">
+        </div>
+        {% endfor %}
+        {% set step_counter = step_counter + 1 %}
+        {% endif %}
+    </div>
+    {% endfor %}
+
+</body>
+</html>

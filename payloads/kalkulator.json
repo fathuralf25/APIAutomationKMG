@@ -1,0 +1,15 @@
+{
+  "ktp": "",
+  "tanggal_lahir": "",
+  "tanggal_rencana_realisasi": "",
+  "tenor": 12,
+  "uang_pertanggungan": 50000000,
+  "kode_bank": "001",
+  "produk": {
+    "code": "KMG",
+    "type": "01",
+    "category": "REGULER"
+  },
+  "tinggi_badan": 170,
+  "berat_badan": 65
+}

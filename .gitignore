@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# Environment
+.env
+
+# Generated files
+reports/
+logs/
+evidence/
+
+# IDE / Editors
+.vscode/    
+.idea/

@@ -1,0 +1,8 @@
+{
+    "nomor_loan": "LN-TESTLAGINIHHH",
+    "nomor_reff_pembayaran": "REF-PAY-998877",
+    "nominal_pembayaran": 3030000,
+    "kategori_pembayaran": "PREMI",
+    "description": "Pembayaran premi asuransi reguler",
+    "jenis_transaksi": "PAYMENT"
+}

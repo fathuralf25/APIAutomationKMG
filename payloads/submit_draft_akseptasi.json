@@ -1,0 +1,42 @@
+{
+    "nomor_transaksi": "",
+    "kode_bank": "001",
+    "produk": {
+        "code": "KMG",
+        "type": "01",
+        "category": "REGULER"
+    },
+    
+    "nomor_nasabah": "NSB-94752",
+    "nama_nasabah": "Lati Fanso",
+    "jenis_kelamin": "L",
+    "ktp": "",
+    "npwp": "123456789017955",
+    "usia": 18,
+    "tempat_lahir": "Surabaya",
+    "nama_ibu_kandung": "Sri Wati",
+    "alamat": "Jl. Raya Darmo No. 5, Surabaya",
+    "kode_pos": "15138",
+    "no_telepon": "081234567890",
+    "tanggal_lahir": "",
+    "tanggal_rencana_realisasi": "",
+    "tanggal_akhir_asuransi": "",
+    "tenor": 12,
+    "uang_pertanggungan": 200000000,
+    "pekerjaan": "BUMN",
+    "tinggi_badan": 170,
+    "berat_badan": 65,
+    "jenis_transaksi": "NEW",
+    "underwriting_answers": [
+        {
+            "asuransi": "AJX",
+            "question": "Apakah Anda pernah didiagnosis penyakit jantung?",
+            "value": "TIDAK"
+        },
+        {
+            "asuransi": "AJX",
+            "question": "Apakah Anda perokok aktif?",
+            "value": "TIDAK"
+        }
+    ]
+}

@@ -1,0 +1,6 @@
+SUBMIT_DRAFT_AKSEPTASI = "/akseptasi/draft/submit"
+INQUIRY_LOAN = "/akseptasi/loan/inquiry"
+OTORISASI = "/akseptasi/loan/otorisasi"
+PAYMENT = "/akseptasi/loan/payment"
+PEMBATALAN = "/akseptasi/draft/canceled"
+KALKULATOR = "/calculate/premi"

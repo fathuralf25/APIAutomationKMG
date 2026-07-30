@@ -1,0 +1,14 @@
+{
+    "ktp": "3578010615850001",
+    "tanggal_lahir": "1985-06-15",
+    "tanggal_rencana_realisasi": "2026-04-10",
+    "tenor": 50,
+    "uang_pertanggungan": 5000000,
+    "produk": {
+        "code": "KMG",
+        "type": "01",
+        "category": "REGULER"
+    },
+    "tinggi_badan": 170,
+    "berat_badan": 65
+}
