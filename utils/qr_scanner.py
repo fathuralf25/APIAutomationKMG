@@ -4,6 +4,8 @@ import cv2
 import numpy as np
 from config.config import BASE_URL, API_TOKEN
 from utils.logger import get_logger
+import os
+import glob
 
 logger = get_logger(__name__)
 
@@ -18,9 +20,9 @@ def download_and_scan_policy_qr(policy_no: str, db_url: str = None, trx_no: str 
         path_query = f"{parsed.path}?{parsed.query}" if parsed.query else parsed.path
         if not path_query:
             path_query = f"/{db_url.lstrip('/')}"
-        url = f"http://10.100.20.16:8000{path_query}"
+        url = f"http://10.100.20.111:8073{path_query}"
     else:
-        url = f"http://10.100.20.16:8000/download/policy?policy_no={policy_no}"
+        url = f"http://10.100.20.111:8073/download/policy?policy_no={policy_no}"
         
     headers = {"Authorization": f"Bearer {API_TOKEN}"}
     logger.info(f"Downloading Policy PDF from: {url}")
@@ -36,8 +38,7 @@ def download_and_scan_policy_qr(policy_no: str, db_url: str = None, trx_no: str 
         detector = cv2.QRCodeDetector()
         
         image_paths = []
-        import os
-        import glob
+        
         os.makedirs("reports", exist_ok=True)
         is_trial = os.environ.get("TRIAL_RUN") == "true"
         prefix = "trial_" if is_trial else ""
