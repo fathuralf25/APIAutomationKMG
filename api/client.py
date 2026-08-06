@@ -30,6 +30,39 @@ class ApiClient:
                 "Authorization": f"Bearer {token}"
             })
 
+    @staticmethod
+    def generate_token(client_id: str, client_secret: str, payload_template: dict) -> str:
+        """
+        Fetches a new JWT token using the provided credentials.
+        """
+        payload = payload_template.copy()
+        payload["clientId"] = client_id
+        payload["clientSecret"] = client_secret
+        
+        url = f"{BASE_URL}/api/v1/auth"
+        logger.info(f"Executing POST {url} to get token")
+        
+        temp_session = requests.Session()
+        temp_session.headers.update({"Content-Type": "application/json"})
+        response = temp_session.post(url, json=payload)
+        
+        logger.info(f"Auth Status Code: {response.status_code}")
+        try:
+            logger.debug(f"Auth Response: {json.dumps(response.json(), indent=2)}")
+        except ValueError:
+            logger.debug(f"Auth Response: {response.text}")
+            
+        response.raise_for_status()
+        
+        data = response.json()
+        token = data.get("access_token") or data.get("token") or data.get("data", {}).get("token") or data.get("data", {}).get("access_token")
+        
+        if not token:
+            logger.error("Token not found in authentication response")
+            raise ValueError("Token not found in authentication response")
+            
+        return token
+
     def _log_request_response(self, response: requests.Response, payload: Optional[Dict] = None):
         """
         Internal method to log the complete HTTP cycle.

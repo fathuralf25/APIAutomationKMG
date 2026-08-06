@@ -78,7 +78,6 @@ ktp
 
 16 numeric digits
 
-
 ## KTP Business Rules
 
 A customer (identified by KTP) can only have ONE active insurance submission at a time.
@@ -197,6 +196,7 @@ Keep business rules separate from API request logic.
 Keep test files easy to read.
 
 Avoid hardcoded values.
+All import and from statements must be placed at the top of the file, not inside functions or methods (DRY principle).
 
 ---
 

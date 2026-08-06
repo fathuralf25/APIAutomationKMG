@@ -1,5 +1,13 @@
 import pytest
+import glob
+import os
+import sys
+from datetime import datetime
 from typing import Dict, Any, Generator
+
+from config.config import API_TOKEN, CLIENT_ID, CLIENT_SECRET
+from utils.evidence_collector import evidence_collector
+from utils.report_generator import report_generator
 
 from api.client import ApiClient
 from db.client import DatabaseClient
@@ -12,11 +20,19 @@ logger = get_logger(__name__)
 def state() -> Dict[str, Any]:
     return {}
 
-from config.config import API_TOKEN
-
 @pytest.fixture(scope="session")
 def api_client() -> ApiClient:
-    client = ApiClient(token=API_TOKEN)
+    token = API_TOKEN
+    if CLIENT_ID and CLIENT_SECRET:
+        try:
+            logger.info("Attempting to auto-generate token using client credentials...")
+            jwt_template = load_payload("generate_jwt.json")
+            token = ApiClient.generate_token(CLIENT_ID, CLIENT_SECRET, jwt_template)
+            logger.info("Token successfully auto-generated.")
+        except Exception as e:
+            logger.error(f"Failed to auto-generate token: {e}. Falling back to static API_TOKEN.")
+            
+    client = ApiClient(token=token)
     return client
 
 @pytest.fixture(scope="session")
@@ -56,7 +72,7 @@ def pytest_runtest_makereport(item, call):
                 tc_id = "TC-TRIAL-1"
                 
             if tc_id:
-                from utils.evidence_collector import evidence_collector
+                
                 evidence_collector.set_test_status(tc_id, "Failed")
 
 def pytest_collection_modifyitems(config, items):
@@ -68,9 +84,6 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(getattr(pytest.mark, marker_name))
 
 def pytest_sessionstart(session):
-    import glob
-    import os
-    import sys
     
     # Treat as trial if 'trial', 'sandbox', or 'selected' is in the command, or if we are filtering tests with '-k'
     is_trial = any(kw in arg.lower() for arg in sys.argv for kw in ['trial', 'sandbox', 'selected']) or '-k' in sys.argv
@@ -106,6 +119,14 @@ def pytest_sessionstart(session):
         except Exception:
             pass
             
+    # Hapus images FMS dari testing sebelumnya
+    old_fms_images = glob.glob(f"evidence/acs/{prefix}fms_jurnal_*.png")
+    for old in old_fms_images:
+        try:
+            os.remove(old)
+        except Exception:
+            pass
+            
     old_acs_debug = glob.glob(f"evidence/acs/{prefix}debug_error*.png")
     for old in old_acs_debug:
         try:
@@ -117,19 +138,15 @@ def pytest_sessionfinish(session, exitstatus):
     """
     Generate the new beautiful Automation Report after tests finish.
     """
-    import sys
-    import os
+    
     is_trial = any(kw in arg.lower() for arg in sys.argv for kw in ['trial', 'sandbox', 'selected']) or '-k' in sys.argv
     prefix = "trial_" if is_trial else ""
 
-    from utils.evidence_collector import evidence_collector
-    from utils.report_generator import report_generator
-    from datetime import datetime
+    
     
     evidences = evidence_collector.get_all_evidences()
     if evidences:
-        from utils.logger import get_logger
-        logger = get_logger(__name__)
+        
         logger.info(f"Generating new beautiful PDF/HTML, DOCX, and EXCEL reports from pytest executions (Prefix: {prefix})...")
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -143,4 +160,6 @@ def pytest_sessionfinish(session, exitstatus):
         excel_filename = f"reports/{prefix}Automation_Report_Batch_{timestamp}.xlsx"
         report_generator.generate_excel(evidences, excel_filename)
         
-        logger.info(f"Reports generated successfully: {pdf_filename}, {docx_filename}, and {excel_filename}")
+        report_generator.generate_defect_reports(evidences, prefix)
+        
+        logger.info(f"Reports generated successfully: {pdf_filename}, {docx_filename}, {excel_filename}, and defect reports if any")

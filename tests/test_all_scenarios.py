@@ -6,7 +6,7 @@ from utils.logger import get_logger
 from utils.evidence_collector import evidence_collector
 from api.endpoints import KALKULATOR, SUBMIT_DRAFT_AKSEPTASI, INQUIRY_LOAN, OTORISASI, PAYMENT, PEMBATALAN
 
-from flows.e2e_flow import run_full_e2e_flow, run_pembatalan_bertahap_flow
+from flows.e2e_flow import run_full_e2e_flow, run_pembatalan_bertahap_flow, run_payment_e2e_flow, run_batal_polis_flow
 from validators.db_validator import validate_draft_akseptasi, validate_terbit_polis
 from validators.ui_validator import validate_polis_ui_and_qr
 
@@ -84,7 +84,7 @@ def test_dynamic_scenarios(tc_id, api_client, db_client, state, base_payloads):
     evidence_collector.set_test_metadata(tc_id, meta["tc_name"], meta["expected"], meta["precondition"])
     
     try:
-        from flows.e2e_flow import run_payment_e2e_flow, run_batal_polis_flow
+        
         # 1. Custom E2E Flows
         if tc_id in ["TC-30", "TC-31"]:
             run_full_e2e_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta)

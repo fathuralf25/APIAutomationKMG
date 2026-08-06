@@ -8,7 +8,6 @@ from tests.test_all_scenarios import test_dynamic_scenarios as execute_scenario,
 # Pastikan TC-ID tersebut ada di dalam file collections/test_script.xlsx.
 SELECTED_TC = [
     "TC-31",
-    # "TC-10",
 ]
 # ==============================================================================
 

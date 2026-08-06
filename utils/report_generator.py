@@ -1,11 +1,36 @@
 import os
 import copy
+import json
+import traceback
 from datetime import datetime
 from jinja2 import Environment, FileSystemLoader
 
-def set_table_borders(table):
+try:
+    from weasyprint import HTML
+    HAS_WEASYPRINT = True
+except (ImportError, OSError):
+    HAS_WEASYPRINT = False
+
+try:
+    from docx import Document
+    from docx.shared import Pt, RGBColor, Inches
+    from docx.enum.table import WD_TABLE_ALIGNMENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml import OxmlElement
+    from docx.oxml.shared import OxmlElement as SharedOxmlElement
     from docx.oxml.ns import qn
+    HAS_DOCX = True
+except ImportError:
+    HAS_DOCX = False
+
+try:
+    from openpyxl import load_workbook
+    from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+    HAS_OPENPYXL = True
+except ImportError:
+    HAS_OPENPYXL = False
+
+def set_table_borders(table):
     tbl = table._tbl
     tblPr = tbl.tblPr
     tblBorders = OxmlElement('w:tblBorders')
@@ -19,18 +44,14 @@ def set_table_borders(table):
     tblPr.append(tblBorders)
 
 def set_cell_background(cell, color_hex):
-    from docx.oxml.shared import OxmlElement
-    from docx.oxml.ns import qn
     tcPr = cell._tc.get_or_add_tcPr()
-    shd = OxmlElement('w:shd')
+    shd = SharedOxmlElement('w:shd')
     shd.set(qn('w:val'), 'clear')
     shd.set(qn('w:color'), 'auto')
     shd.set(qn('w:fill'), color_hex)
     tcPr.append(shd)
 
 def add_page_number(run):
-    from docx.oxml import OxmlElement
-    from docx.oxml.ns import qn
     fldChar1 = OxmlElement('w:fldChar')
     fldChar1.set(qn('w:fldCharType'), 'begin')
     instrText = OxmlElement('w:instrText')
@@ -93,7 +114,6 @@ class ReportGenerator:
         self.generate_html(evidences, html_file)
         
         try:
-            from weasyprint import HTML
             HTML(html_file).write_pdf(output_file)
             print(f"PDF generated successfully: {output_file}")
         except ImportError:
@@ -104,11 +124,6 @@ class ReportGenerator:
     def generate_docx(self, evidences: dict, output_file: str):
         filtered_evidences = self._filter_db_results(evidences)
         try:
-            from docx import Document
-            from docx.shared import Pt, RGBColor, Inches
-            from docx.enum.table import WD_TABLE_ALIGNMENT
-            from docx.enum.text import WD_ALIGN_PARAGRAPH
-            import json
             
             # Use base_template
             doc = Document('collections/base_template.docx')
@@ -126,7 +141,6 @@ class ReportGenerator:
             current_date_cover = datetime.now().strftime("%d/%m/%Y")
             
             # Set margins to prevent overlapping with footer
-            from docx.shared import Inches
             for section in doc.sections:
                 section.bottom_margin = Inches(1.5)
 
@@ -202,7 +216,6 @@ class ReportGenerator:
                         test_data_str = json.dumps(payload, indent=2)
 
                 if test_data_str:
-                    from docx.shared import Pt
                     p_td = doc.add_paragraph(f"Test Data:\n{test_data_str.strip()}")
                     p_td.paragraph_format.space_before = Pt(12)
                     p_td.paragraph_format.space_after = Pt(12)
@@ -309,7 +322,6 @@ class ReportGenerator:
                     p_qr.add_run("Terjemahan QR Code:\n").bold = True
                     p_qr.add_run(epolis.get("qr_result", "N/A"))
                 
-                    from docx.shared import Inches
                     for img_path in epolis.get("image_paths", []):
                         try:
                             doc.add_picture(img_path, width=Inches(5.0))
@@ -323,7 +335,6 @@ class ReportGenerator:
                     p_ui = doc.add_paragraph(f"\n[Test_Step_{step_counter}]: Pengecekan UI (ACS/FMS)", style='Heading 3')
                     p_ui.paragraph_format.space_before = Pt(14)
                     p_ui.paragraph_format.space_after = Pt(6)
-                    from docx.shared import Inches
                     for ui_ev in data["ui"]:
                         sys_name = ui_ev.get("system_name", "System")
                         img_path = ui_ev.get("screenshot_path", "")
@@ -376,8 +387,6 @@ class ReportGenerator:
                     step_counter += 1
             
             # Setup Page Number in Footer
-            from docx.oxml import OxmlElement
-            from docx.oxml.ns import qn
             
             def setup_footer(footer_obj):
                 # Clear any existing junk from footer
@@ -432,10 +441,6 @@ class ReportGenerator:
             print(f"Failed to generate DOCX: {e}")
 
     def generate_excel(self, evidences: dict, output_file: str):
-        import os
-        import json
-        from openpyxl import load_workbook
-        from openpyxl.styles import Alignment, Font
 
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
         try:
@@ -509,7 +514,6 @@ class ReportGenerator:
             title_cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
             # Format Header Row (Row 3): Blue background, White text, Bold
-            from openpyxl.styles import PatternFill
             header_fill = PatternFill(start_color="003366", end_color="003366", fill_type="solid")
             header_font = Font(color="FFFFFF", bold=True)
             for col in range(1, ws.max_column + 1):
@@ -519,7 +523,6 @@ class ReportGenerator:
                 header_cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
             # Apply Full Border to the table (Row 3 to Max Row)
-            from openpyxl.styles import Border, Side
             thin_border = Border(left=Side(style='thin'), 
                                  right=Side(style='thin'), 
                                  top=Side(style='thin'), 
@@ -535,7 +538,142 @@ class ReportGenerator:
             
             print(f"Excel report generated successfully: {output_file}")
         except Exception as e:
-            import traceback
             print(f"Failed to generate Excel report: {e}\n{traceback.format_exc()}")
+
+    def get_next_defect_id(self):
+        counter_file = "collections/defect_counter.json"
+        count = 0
+        if os.path.exists(counter_file):
+            try:
+                with open(counter_file, "r") as f:
+                    data = json.load(f)
+                    count = data.get("count", 0)
+            except Exception:
+                pass
+        count += 1
+        try:
+            os.makedirs(os.path.dirname(counter_file), exist_ok=True)
+            with open(counter_file, "w") as f:
+                json.dump({"count": count}, f)
+        except Exception as e:
+            print(f"Failed to save defect counter: {e}")
+        return f"DEF-{count}"
+
+    def generate_defect_reports(self, evidences: dict, prefix: str):
+        for tc_id, data in evidences.items():
+            if data.get("status", "").lower() != "failed":
+                continue
+                
+            try:
+                def_id = self.get_next_defect_id()
+                doc = Document('collections/TEMPLATE_Defect Report.docx')
+                if not doc.tables:
+                    print(f"Template docx doesn't have tables for {tc_id}")
+                    continue
+                    
+                table = doc.tables[0]
+                
+                table.cell(0, 1).text = str(tc_id)
+                table.cell(1, 1).text = def_id
+                
+                expected = data.get("expected_result", "Test execution failed.")
+                table.cell(3, 1).text = f"Test execution failed.\nExpected: {expected}"
+                
+                cell_4_1 = table.cell(4, 1)
+                cell_4_1.text = "" 
+                
+                p = cell_4_1.add_paragraph(f"Tanggal execution test: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                
+                p.add_run("\nStep to reproduce:\n").bold = True
+                
+                step_counter = 1
+                for api in data.get("api", []):
+                    endpoint_url = api.get('url', '')
+                    endpoint_name = "API"
+                    if "draft-akseptasi" in endpoint_url: endpoint_name = "Draft Akseptasi"
+                    elif "inquiry" in endpoint_url: endpoint_name = "Inquiry Loan"
+                    elif "otorisasi" in endpoint_url: endpoint_name = "Otorisasi"
+                    elif "payment" in endpoint_url or "pembayaran" in endpoint_url: endpoint_name = "Payment/Pembayaran"
+                    elif "batal" in endpoint_url or "cancel" in endpoint_url: endpoint_name = "Pembatalan"
+                    
+                    p.add_run(f"{step_counter}. Hit {endpoint_name} ({api.get('method', 'POST')} {endpoint_url})\n")
+                    step_counter += 1
+                    
+                for db in data.get("db", []):
+                    p.add_run(f"{step_counter}. DB Validation\n")
+                    step_counter += 1
+                    
+                if "ui" in data:
+                    p.add_run(f"{step_counter}. Pengecekan UI ACS/FMS\n")
+                    step_counter += 1
+                    
+                p.add_run("\nActual Result:\n").bold = True
+                if data.get("api") and len(data["api"]) > 0:
+                    last_api = data["api"][-1]
+                    res_text = json.dumps(last_api.get('response_json', {}), indent=2)
+                    p.add_run(f"API Response:\n{res_text}\n\n")
+                
+                if data.get("db") and len(data["db"]) > 0:
+                    last_db = data["db"][-1]
+                    db_res = json.dumps(last_db.get('result', []), indent=2, default=str)
+                    p.add_run(f"DB Result:\n{db_res}\n\n")
+                    
+                if "epolis" in data:
+                    epolis = data["epolis"]
+                    p.add_run(f"Terjemahan QR Code: {epolis.get('qr_result', 'N/A')}\n\n")
+                    for img_path in epolis.get("image_paths", []):
+                        try:
+                            p.add_run().add_picture(img_path, width=Inches(4.0))
+                            p.add_run("\n")
+                        except Exception as e:
+                            p.add_run(f"[Gagal melampirkan gambar E-Polis: {e}]\n")
+                            
+                if "ui" in data:
+                    for ui_ev in data["ui"]:
+                        sys_name = ui_ev.get("system_name", "System")
+                        img_path = ui_ev.get("screenshot_path", "")
+                        p.add_run(f"System: {sys_name}\n")
+                        try:
+                            p.add_run().add_picture(img_path, width=Inches(4.0))
+                            p.add_run("\n")
+                        except Exception as e:
+                            p.add_run(f"[Gagal melampirkan screenshot {sys_name}: {e}]\n")
+                            
+                def setup_footer(footer_obj):
+                    for p_footer in footer_obj.paragraphs:
+                        p_footer.text = ""
+                        pPr = p_footer._p.get_or_add_pPr()
+                        pBdr = pPr.find(qn('w:pBdr'))
+                        if pBdr is not None:
+                            pPr.remove(pBdr)
+                    for t in footer_obj.tables:
+                        t._element.getparent().remove(t._element)
+                        
+                    footer_table = footer_obj.add_table(rows=1, cols=1, width=Inches(0.5))
+                    footer_table.alignment = WD_TABLE_ALIGNMENT.RIGHT
+                    footer_table.autofit = False
+                    footer_table.columns[0].width = Inches(0.5)
+                    
+                    cell = footer_table.cell(0, 0)
+                    set_cell_background(cell, '17375E')
+                    
+                    p_cell = cell.paragraphs[0]
+                    p_cell.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run = p_cell.add_run()
+                    run.font.size = Pt(11)
+                    run.bold = True
+                    run.font.color.rgb = RGBColor(255, 255, 255)
+                    add_page_number(run)
+
+                for section in doc.sections:
+                    setup_footer(section.footer)
+                            
+                out_file = f"reports/defects/{prefix}Defect_Report_{def_id}_{tc_id}.docx"
+                os.makedirs(os.path.dirname(out_file), exist_ok=True)
+                doc.save(out_file)
+                print(f"Defect report generated successfully: {out_file}")
+                
+            except Exception as e:
+                print(f"Failed to generate defect report for {tc_id}: {e}\n{traceback.format_exc()}")
 
 report_generator = ReportGenerator()

@@ -1,4 +1,7 @@
 import json
+import logging
+import openpyxl
+from datetime import datetime
 from collections import defaultdict
 from typing import Any, Dict, List
 
@@ -9,8 +12,6 @@ class EvidenceCollector:
 
     def update_excel_status(self, tc_id: str, status: str, test_data: str, expected_result: str = ""):
         try:
-            import openpyxl
-            from datetime import datetime
             wb = openpyxl.load_workbook('collections/test_script.xlsx')
             ws = wb.active
             for row in range(1, ws.max_row + 1):
@@ -24,7 +25,6 @@ class EvidenceCollector:
                     break
             wb.save('collections/test_script.xlsx')
         except Exception as e:
-            import logging
             logging.getLogger(__name__).error(f"Failed to update excel: {e}")
 
     def set_test_metadata(self, tc_id: str, tc_name: str, expected_result: str, precondition: str = ""):
@@ -56,7 +56,6 @@ class EvidenceCollector:
         if not test_data_str and self.evidences[tc_id].get("api"):
             payload = self.evidences[tc_id]["api"][0].get("request_payload", {})
             if payload:
-                import json
                 test_data_str = json.dumps(payload, indent=2)
                 
         expected_result = self.evidences[tc_id].get("expected_result", "")

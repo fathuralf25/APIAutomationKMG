@@ -1,4 +1,7 @@
 import os
+import glob
+import re
+from datetime import datetime
 from playwright.sync_api import sync_playwright
 import time
 import logging
@@ -82,7 +85,6 @@ def check_polis_in_acs(nomor_polis: str) -> str:
             # Give some time for the modal/details to fully render
             time.sleep(3)
         except Exception as e:
-            import glob
             debug_path = f"evidence/acs/{prefix}debug_error.png"
             os.makedirs("evidence/acs", exist_ok=True)
 
@@ -91,7 +93,6 @@ def check_polis_in_acs(nomor_polis: str) -> str:
             browser.close()
             raise e
         
-        import glob
         os.makedirs("evidence/acs", exist_ok=True)
 
         # Screenshot General Info
@@ -114,7 +115,6 @@ def check_polis_in_acs(nomor_polis: str) -> str:
             # Extract Premium value from Summary tab using heuristic regex
             try:
                 summary_text = page.locator("body").inner_text()
-                import re
                 # Look for the Summary table header "Currency Premi" and then the "IDR" row
                 match = re.search(r'Currency\s+Premi[\s\S]*?IDR\s+([\d\.,]+)', summary_text)
                 if match:
@@ -135,7 +135,6 @@ def check_polis_in_acs(nomor_polis: str) -> str:
         # --- FMS Check ---
         try:
             # 1. Extract No Nota
-            from datetime import datetime
             page.wait_for_timeout(2000)
             
             # Find the paragraph containing /GJ-

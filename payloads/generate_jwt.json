@@ -1,4 +1,4 @@
 {
-    "clientId": "h2hbpdjatim",
-    "clientSecret": "41aac9a6-aac4-4813-adf8-9534d0b0e076"
+    "clientId": "<CLIENT_ID_DARI_ENV>",
+    "clientSecret": "<CLIENT_SECRET_DARI_ENV>"
 }

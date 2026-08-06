@@ -17,12 +17,20 @@ def download_and_scan_policy_qr(policy_no: str, db_url: str = None, trx_no: str 
     import urllib.parse
     if db_url:
         parsed = urllib.parse.urlparse(db_url)
-        path_query = f"{parsed.path}?{parsed.query}" if parsed.query else parsed.path
+        path = parsed.path
+        if path.startswith("/download"):
+            path = path.replace("/download", "", 1)
+        path_query = f"{path}?{parsed.query}" if parsed.query else path
         if not path_query:
             path_query = f"/{db_url.lstrip('/')}"
-        url = f"http://10.100.20.111:8073{path_query}"
+        
+        # Load TESTING_DOCS_URL from env or use the user's hardcoded default
+        base_docs_url = os.environ.get("TESTING_DOCS_URL", "http://10.100.20.111:8073").rstrip('/')
+        url = f"{base_docs_url}{path_query}"
     else:
-        url = f"http://10.100.20.111:8073/download/policy?policy_no={policy_no}"
+        base_docs_url = os.environ.get("TESTING_DOCS_URL", "http://10.100.20.111:8073").rstrip('/')
+        encoded_policy_no = urllib.parse.quote(policy_no, safe='')
+        url = f"{base_docs_url}/policy?policy_no={encoded_policy_no}"
         
     headers = {"Authorization": f"Bearer {API_TOKEN}"}
     logger.info(f"Downloading Policy PDF from: {url}")

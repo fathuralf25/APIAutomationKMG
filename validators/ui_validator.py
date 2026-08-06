@@ -1,4 +1,6 @@
 from utils.logger import get_logger
+from utils.qr_scanner import download_and_scan_policy_qr
+from utils.ui_acs import check_polis_in_acs
 
 logger = get_logger(__name__)
 
@@ -10,7 +12,6 @@ def validate_polis_ui_and_qr(tc_id, no_sertifikat, url_download, trx_id, data_su
         return
 
     # QR Scan
-    from utils.qr_scanner import download_and_scan_policy_qr
     qr_result, image_paths = download_and_scan_policy_qr(no_sertifikat, url_download, trx_id)
     evidence_collector.add_epolis_evidence(tc_id, qr_result, image_paths)
     
@@ -24,7 +25,6 @@ def validate_polis_ui_and_qr(tc_id, no_sertifikat, url_download, trx_id, data_su
     
     # UI ACS Check
     try:
-        from utils.ui_acs import check_polis_in_acs
         ui_res = check_polis_in_acs(no_sertifikat)
         screenshot_paths = ui_res.get("paths", [])
         premi_acs = ui_res.get("premi_acs", 0.0)
