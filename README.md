@@ -74,23 +74,18 @@ This framework validates the API end-to-end based on the strict KMG Jatim Busine
 
 **📖 Important:** Before adding new tests or modifying existing ones, please read the [TESTING_GUIDE.md](file:///Users/fathur/QA/automation-api-kmgjatim/TESTING_GUIDE.md) to understand the architecture, payload handling, and report generation structure.
 
-**Run the full end-to-end automation test suite:**
+**Run using the Interactive Script (Recommended):**
+
+We now use an interactive runner `run_test.py` at the root of the project which allows you to dynamically set the Project Code, Report Title, and choose whether to run all scenarios or just specific ones (e.g. TC-31).
+
+```bash
+python run_test.py
+```
+
+**Run via pytest command directly:**
 
 ```bash
 pytest tests/test_all_scenarios.py -v
-```
-
-**Run specific test cases (Trial / Debugging):**
-If you only want to execute a few specific test cases (for example, `TC-29` and `TC-30`), you can edit `tests/test_run_selected.py` and run it:
-
-```bash
-pytest tests/test_run_selected.py -v
-```
-
-Alternatively, use the `-k` flag on the main runner:
-
-```bash
-pytest tests/test_all_scenarios.py -k "TC-29" -v
 ```
 
 **Sandbox Experimentation:**

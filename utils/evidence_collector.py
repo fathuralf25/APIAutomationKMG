@@ -27,10 +27,11 @@ class EvidenceCollector:
         except Exception as e:
             logging.getLogger(__name__).error(f"Failed to update excel: {e}")
 
-    def set_test_metadata(self, tc_id: str, tc_name: str, expected_result: str, precondition: str = ""):
+    def set_test_metadata(self, tc_id: str, tc_name: str, expected_result: str, precondition: str = "", test_steps: str = ""):
         self.evidences[tc_id]["tc_name"] = tc_name
         self.evidences[tc_id]["expected_result"] = expected_result
         self.evidences[tc_id]["precondition"] = precondition
+        self.evidences[tc_id]["test_steps"] = test_steps
 
     def set_test_status(self, tc_id: str, status: str):
         self.evidences[tc_id]["status"] = status

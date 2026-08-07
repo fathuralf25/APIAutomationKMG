@@ -92,6 +92,21 @@ class ReportGenerator:
                             filtered_row = {k: v for k, v in row.items() if str(k).lower() in allowed_cols}
                             new_results.append(filtered_row if filtered_row else row)
                         db['result'] = new_results
+            
+            # Tambahkan actual_result agar bisa dipakai di HTML dan DOCX
+            actual_json = {}
+            if data.get("api") and len(data["api"]) > 0:
+                actual_json = data["api"][-1].get("response_json", {})
+            if actual_json:
+                expected = data.get("expected_result", "")
+                if "tidak kerecord" in expected.lower():
+                    db_msg = "2. data tidak kerecord di DB"
+                else:
+                    db_msg = "2. data DB sesuai dengan request postman"
+                data["actual_result"] = "1. Response API:\n" + json.dumps(actual_json, indent=2) + "\n\n" + db_msg
+            else:
+                data["actual_result"] = ""
+
         return evidences_copy
 
     def generate_html(self, evidences: dict, output_file: str):
@@ -138,7 +153,65 @@ class ReportGenerator:
                 pass
             
             current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            current_date_cover = datetime.now().strftime("%d/%m/%Y")
+            current_date_cover = datetime.now().strftime("%d %B %Y")
+            
+            report_title = os.environ.get("REPORT_TITLE", "Laporan Hasil Pengujian API")
+            project_code = os.environ.get("PROJECT_CODE", "PRJ-000")
+            
+            for p in doc.paragraphs:
+                is_title_or_code = False
+                is_date = False
+
+                if '{{REPORT_TITLE}}' in p.text or '{{PROJECT_CODE}}' in p.text:
+                    if '{{REPORT_TITLE}}' in p.text:
+                        p.text = p.text.replace('{{REPORT_TITLE}}', report_title)
+                    if '{{PROJECT_CODE}}' in p.text:
+                        p.text = p.text.replace('{{PROJECT_CODE}}', project_code)
+                    is_title_or_code = True
+                
+                if '{{REPORT_DATE}}' in p.text:
+                    p.text = p.text.replace('{{REPORT_DATE}}', current_date_cover)
+                    is_date = True
+                
+                if is_title_or_code and p.runs:
+                    for run in p.runs:
+                        run.font.name = 'Tahoma'
+                        run.font.size = Pt(20)
+                        run.font.bold = True
+                elif is_date and p.runs:
+                    for run in p.runs:
+                        run.font.name = 'Tahoma'
+                        run.font.size = Pt(14)
+                        run.font.bold = True
+
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for p in cell.paragraphs:
+                            is_title_or_code = False
+                            is_date = False
+
+                            if '{{REPORT_TITLE}}' in p.text or '{{PROJECT_CODE}}' in p.text:
+                                if '{{REPORT_TITLE}}' in p.text:
+                                    p.text = p.text.replace('{{REPORT_TITLE}}', report_title)
+                                if '{{PROJECT_CODE}}' in p.text:
+                                    p.text = p.text.replace('{{PROJECT_CODE}}', project_code)
+                                is_title_or_code = True
+                            
+                            if '{{REPORT_DATE}}' in p.text:
+                                p.text = p.text.replace('{{REPORT_DATE}}', current_date_cover)
+                                is_date = True
+                            
+                            if is_title_or_code and p.runs:
+                                for run in p.runs:
+                                    run.font.name = 'Tahoma'
+                                    run.font.size = Pt(20)
+                                    run.font.bold = True
+                            elif is_date and p.runs:
+                                for run in p.runs:
+                                    run.font.name = 'Tahoma'
+                                    run.font.size = Pt(14)
+                                    run.font.bold = True
             
             # Set margins to prevent overlapping with footer
             for section in doc.sections:
@@ -148,7 +221,7 @@ class ReportGenerator:
                 doc.add_page_break()
                 
                 # Info Table (Plain without blue backgrounds)
-                table = doc.add_table(rows=5, cols=2)
+                table = doc.add_table(rows=7, cols=2)
                 try:
                     table.style = 'Table Grid'
                 except KeyError:
@@ -162,7 +235,9 @@ class ReportGenerator:
                     ("Test Case Name", data["tc_name"]),
                     ("Date", current_date),
                     ("Status", data["status"]),
-                    ("Expected Result", data["expected_result"])
+                    ("Test Steps", data.get("test_steps", "")),
+                    ("Expected Result", data["expected_result"]),
+                    ("Actual Result", data.get("actual_result", ""))
                 ]
                 
                 for i, (label, val) in enumerate(rows):
@@ -174,7 +249,7 @@ class ReportGenerator:
                     set_cell_background(cell_label, '17375E')
                     
                     cell_val = table.cell(i, 1)
-                    if label == "Expected Result" and val:
+                    if (label == "Test Steps" or label == "Expected Result" or label == "Actual Result") and val:
                         # Properly render newlines in python-docx
                         cell_val.text = ""
                         for line in str(val).split('\n'):
@@ -447,6 +522,26 @@ class ReportGenerator:
             wb = load_workbook('collections/test_script.xlsx')
             ws = wb.active
             
+            # Fill down Stream and Nama Modul BEFORE deleting rows
+            last_stream = None
+            last_modul = None
+            for row in range(4, ws.max_row + 1):
+                stream_val = ws.cell(row=row, column=2).value
+                modul_val = ws.cell(row=row, column=3).value
+                if stream_val: last_stream = stream_val
+                elif last_stream: ws.cell(row=row, column=2).value = last_stream
+                if modul_val: last_modul = modul_val
+                elif last_modul: ws.cell(row=row, column=3).value = last_modul
+
+            # Hapus row yang tidak dieksekusi (dijalankan dari bawah ke atas agar index tidak bergeser)
+            for row in range(ws.max_row, 3, -1):
+                tc_id = ws.cell(row=row, column=4).value
+                if not tc_id or not isinstance(tc_id, str) or not tc_id.startswith("TC-"):
+                    continue
+                if tc_id not in evidences:
+                    ws.delete_rows(row, 1)
+
+            # Update sisa row yang dieksekusi
             for row in range(4, ws.max_row + 1):
                 tc_id = ws.cell(row=row, column=4).value
                 if not tc_id or not isinstance(tc_id, str) or not tc_id.startswith("TC-"):
@@ -465,10 +560,15 @@ class ReportGenerator:
                             else:
                                 db_msg = "2. data DB sesuai dengan request postman"
                                 
-                            ws.cell(row=row, column=10).value = "1. Response API:\n" + json.dumps(actual_json, indent=2) + "\n\n" + db_msg
-                            ws.cell(row=row, column=10).alignment = Alignment(wrap_text=True, vertical="top")
+                            ws.cell(row=row, column=12).value = "1. Response API:\n" + json.dumps(actual_json, indent=2) + "\n\n" + db_msg
+                            ws.cell(row=row, column=12).alignment = Alignment(wrap_text=True, vertical="top")
                             
                     ws.cell(row=row, column=11).value = data.get("status", "Failed")
+                    
+                    if data.get("test_steps"):
+                        ws.cell(row=row, column=8).value = data["test_steps"]
+                        ws.cell(row=row, column=8).alignment = Alignment(wrap_text=True, vertical="top")
+                    
                     
                     test_data_str = ""
                     for api in data.get("api", []):
@@ -486,17 +586,6 @@ class ReportGenerator:
                     ws.cell(row=row, column=13).value = "Fathur"
                     ws.cell(row=row, column=14).value = datetime.now().strftime("%d-%b-%Y")
 
-            # Fill down Stream and Nama Modul
-            last_stream = None
-            last_modul = None
-            for row in range(4, ws.max_row + 1):
-                stream_val = ws.cell(row=row, column=2).value
-                modul_val = ws.cell(row=row, column=3).value
-                if stream_val: last_stream = stream_val
-                elif last_stream: ws.cell(row=row, column=2).value = last_stream
-                if modul_val: last_modul = modul_val
-                elif last_modul: ws.cell(row=row, column=3).value = last_modul
-
             # Merge Title A1 to N2, center, wrap text, size 20, bold
             # Unmerge any existing ranges to prevent Excel corruption
             for range_str in list(ws.merged_cells.ranges):
@@ -509,7 +598,12 @@ class ReportGenerator:
                 ws.merge_cells("A1:N2")
             except Exception:
                 pass
+            
+            report_title = os.environ.get("REPORT_TITLE", "Laporan Hasil Pengujian API")
+            project_code = os.environ.get("PROJECT_CODE", "PRJ-000")
+            
             title_cell = ws.cell(row=1, column=1)
+            title_cell.value = f"Test Script - {report_title} ({project_code})"
             title_cell.font = Font(size=20, bold=True)
             title_cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
@@ -521,6 +615,9 @@ class ReportGenerator:
                 header_cell.fill = header_fill
                 header_cell.font = header_font
                 header_cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                
+            # Rename Notes (Column 12) to Actual Result
+            ws.cell(row=3, column=12).value = "Actual Result"
 
             # Apply Full Border to the table (Row 3 to Max Row)
             thin_border = Border(left=Side(style='thin'), 
@@ -532,9 +629,8 @@ class ReportGenerator:
                 for cell in r:
                     cell.border = thin_border
 
-            # Save the final file
+            # Save the final file to reports only (do not overwrite master test_script.xlsx)
             wb.save(output_file)
-            wb.save('collections/test_script.xlsx')
             
             print(f"Excel report generated successfully: {output_file}")
         except Exception as e:

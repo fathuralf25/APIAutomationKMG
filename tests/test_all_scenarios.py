@@ -12,6 +12,22 @@ from validators.ui_validator import validate_polis_ui_and_qr
 
 logger = get_logger(__name__)
 
+def generate_test_steps(tc_id: str, ag: str) -> str:
+    if tc_id in ["TC-30", "TC-31"]:
+        return "1. Hit API Submit Draft Akseptasi\n2. Melakukan DB Validation\n3. Hit API Inquiry Loan\n4. Hit API Otorisasi Penyelia\n5. Hit API Payment\n6. Melakukan DB Validation\n7. Pengecekan Scan QR & Lampiran E-Polis\n8. Pengecekan UI (ACS/FMS)\n9. Tabel Validasi Nilai Premi"
+
+    ag_low = ag.lower()
+    if "a6" in ag_low or "pembayaran" in ag_low:
+        return "1. Hit API Submit Draft Akseptasi\n2. Melakukan DB Validation\n3. Hit API Inquiry Loan\n4. Hit API Otorisasi Penyelia\n5. Hit API Payment\n6. Melakukan DB Validation\n7. Pengecekan Scan QR & Lampiran E-Polis\n8. Pengecekan UI (ACS/FMS)\n9. Tabel Validasi Nilai Premi"
+    elif "a5" in ag_low or "otorisasi" in ag_low:
+        return "1. Hit API Submit Draft Akseptasi\n2. Hit API Inquiry Loan\n3. Hit API Otorisasi Penyelia\n4. Melakukan DB Validation"
+    elif "a4" in ag_low or "inquiry" in ag_low:
+        return "1. Hit API Submit Draft Akseptasi\n2. Hit API Inquiry Loan\n3. Melakukan DB Validation"
+    elif "a7" in ag_low or "pembatalan" in ag_low:
+        return "1. Hit API Submit Draft Akseptasi\n2. Hit API Pembatalan\n3. Melakukan DB Validation"
+    else:
+        return "1. Hit API Submit Draft Akseptasi\n2. Melakukan DB Validation"
+
 def get_test_cases_and_metadata():
     try:
         df = pd.read_excel('collections/test_script.xlsx')
@@ -25,13 +41,13 @@ def get_test_cases_and_metadata():
                 if tc_id.startswith("TC-"):
                     cases.append(tc_id)
                     tc_name = str(row_list[4]) if not pd.isna(row_list[4]) else tc_id
-                    test_step = str(row_list[7]) if not pd.isna(row_list[7]) else ""
+                    raw_test_step = str(row_list[7]) if not pd.isna(row_list[7]) else ""
                     precondition = str(row_list[6]) if not pd.isna(row_list[6]) else "1. Buka Postman\n2. Hit API"
                     expected = str(row_list[9]) if not pd.isna(row_list[9]) else "Sistem merespon dengan benar"
                     api_group = str(row_list[2]) if not pd.isna(row_list[2]) else ""
                     
                     if not api_group:
-                        ts_lower, exp_lower = test_step.lower(), expected.lower()
+                        ts_lower, exp_lower = raw_test_step.lower(), expected.lower()
                         if any(x in exp_lower or x in ts_lower for x in ["pembayaran", "payment", "polis"]): api_group = "a6"
                         elif "otorisasi" in exp_lower or "otorisasi" in ts_lower: api_group = "a5"
                         elif "inquiry" in exp_lower or "loan" in exp_lower or "inquiry" in ts_lower or "loan" in ts_lower: api_group = "a4"
@@ -40,7 +56,8 @@ def get_test_cases_and_metadata():
 
                     metadata[tc_id] = {
                         "tc_name": tc_name, "status": "Failed", "api": [], "db": [],
-                        "expected": expected, "precondition": precondition, "api_group": api_group
+                        "expected": expected, "precondition": precondition, "api_group": api_group,
+                        "test_steps": generate_test_steps(tc_id, api_group)
                     }
         
         if "TC-10" in cases and "TC-11" in cases:
@@ -81,7 +98,7 @@ def test_dynamic_scenarios(tc_id, api_client, db_client, state, base_payloads):
     if tc_id == "TC-11":
         meta["expected"] = "1. {\n  \"status\": False,\n  \"message\": \"Nominal Pembayaran tidak sesuai dengan Nominal Premi yang sebenarnya\"\n}\n2. data tidak kerecord di DB"
         
-    evidence_collector.set_test_metadata(tc_id, meta["tc_name"], meta["expected"], meta["precondition"])
+    evidence_collector.set_test_metadata(tc_id, meta["tc_name"], meta["expected"], meta["precondition"], meta.get("test_steps", ""))
     
     try:
         

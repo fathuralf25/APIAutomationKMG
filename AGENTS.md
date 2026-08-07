@@ -212,7 +212,7 @@ Always preserve data relationship between endpoints.
 
 Never execute Python scripts, pytest, or shell commands unless explicitly approved by the user.
 
-Setiap ada perubahan kode atau sebelum mengeksekusi sesuatu, WAJIB memberikan rencana implementasi (Implementation Plan) terlebih dahulu agar bisa didiskusikan.
+Setiap ada perubahan kode (bahkan 1 karakter pun) atau sebelum mengeksekusi sesuatu, WAJIB memberikan rencana implementasi (Implementation Plan) dan menginfokan ke user terlebih dahulu agar bisa didiskusikan. Tujuannya agar user tahu root cause-nya secara helicopter view.
 
 Wait for approval and discussion before running any command or making any changes.
 

@@ -1,5 +1,4 @@
-
-# Panduan Struktur & Pemeliharaan Testing (Testing Guide)
+# Panduan Struktur & Pemeliharaan Testing (Testing Guide)/
 
 Dokumen ini ditujukan untuk Software Quality Assurance (QA) atau Automation Engineer yang akan membaca, memodifikasi, dan menambahkan test case baru ke dalam *framework* ini. Tujuan utamanya adalah menjaga agar kode tetap rapi (maintainable), mudah dibaca (readable), dan tidak ada duplikasi.
 
@@ -38,10 +37,9 @@ Bagi yang baru pertama kali melihat *framework* ini, jangan bingung. Berikut ada
   * `report_template.html`: Layout dan styling HTML untuk dirender ke dalam bentuk PDF laporan akhir.
 * **`tests/`**: **Jantung Pengujian!** Di folder ini semua skenario dieksekusi menggunakan *pytest*. Penjelasan detailnya ada di bab selanjutnya.
   * `test_all_scenarios.py`: Menjalankan semua skenario pengujian membaca dari excel.
-  * `test_run_selected.py`: Menjalankan sebagian / 1 test case untuk debugging.
   * `test_sandbox.py`: Tempat eksperimen API / logic sebelum dimasukkan ke flow utama.
   * `conftest.py`: Pengaturan dasar *pytest* untuk semua test, termasuk penanganan log & laporan akhir.
-  * `test_unit.py`: Skrip untuk menguji keandalan *utility* dan *helper* mandiri.
+* **`run_test.py`**: Script interaktif (CLI) di root folder untuk menjalankan pengujian. Bisa memilih untuk menjalankan semua skenario atau skenario tertentu saja berdasarkan nomor TC.
 * **`utils/`**: Berisi alat-alat pembantu (*helper*), seperti alat pembuat KTP palsu yang valid, *evidence collector*, dan pengubah HTML ke PDF.
   * `evidence_collector.py`: Mengumpulkan data bukti (response API, screenshot, query db) dari setiap test.
   * `generators.py`: Generator data dummy/dinamis (KTP, tanggal, dsb).
@@ -65,10 +63,10 @@ Semua script testing menggunakan `pytest` dan berada di dalam folder `tests/`.
   * Membaca test case langsung dari Excel (`collections/test_script.xlsx`).
   * Mengeksekusi skenario *positive* dan *negative* secara dinamis berdasarkan data Excel.
   * Menangani alur End-to-End (E2E) dan otomatis menjaga relasi data (seperti `nomor_transaksi` dan `nomor_loan`) untuk *hit* API secara berurutan.
-* **`tests/test_run_selected.py`**
-  * Digunakan untuk menjalankan TC tertentu saja (misal: TC-29) dari Excel, tanpa mengeksekusi semua baris.
-  * Sangat berguna untuk *debugging* atau *re-test* satu skenario spesifik secara cepat.
-  * Menggunakan fungsi dan alur yang sama persis dengan `test_all_scenarios.py` sehingga anti-duplikasi.
+* **`run_test.py`** (Script Interaktif di Root Folder)
+  * Digunakan untuk mengeksekusi pengujian dengan antarmuka terminal interaktif.
+  * Memungkinkan QA untuk mengisi `Project Code` dan `Report Title` secara otomatis.
+  * Bisa memilih mengeksekusi semua TC atau mengeksekusi beberapa TC spesifik saja (misal memasukkan angka `31` untuk menjalankan `TC-31`).
 * **`tests/test_sandbox.py`**
   * Digunakan sebagai "tempat bermain" (sandbox) untuk mencoba skenario *edge-case* baru secara *step-by-step* (hardcode manual). Setelah selesai dan matang, logikanya bisa dipindah ke flow utama.
 * **`tests/conftest.py`**
@@ -146,7 +144,7 @@ Jika Anda ingin menambahkan skenario baru:
 
 1. Buka `tests/test_sandbox.py` jika Anda perlu melakukan *trial and error* API-nya secara manual (sandbox test).
 2. Jika skenarionya sudah matang, masukkan TC tersebut ke `collections/test_script.xlsx` dan atur datanya di `utils/payload_factory.py`.
-3. Untuk tahap *debugging*, gunakan `tests/test_run_selected.py` dan ubah variabel `SELECTED_TC` dengan ID TC tersebut untuk menjalankannya secara terisolasi tanpa menyentuh file utama.
+3. Untuk mengeksekusi skenario tunggal tersebut, jalankan script `python run_test.py` di terminal, lalu pilih opsi 2 dan masukkan nomor TC tersebut.
 
 **Catatan Maintanability:**
 
