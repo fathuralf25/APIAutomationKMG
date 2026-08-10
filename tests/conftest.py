@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Dict, Any, Generator
 
 from config.config import API_TOKEN, CLIENT_ID, CLIENT_SECRET
-from utils.evidence_collector import evidence_collector
+from helpers.evidence_collector import evidence_collector
 from utils.report_generator import report_generator
 
 from api.client import ApiClient

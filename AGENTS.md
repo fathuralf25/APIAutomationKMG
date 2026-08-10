@@ -16,8 +16,8 @@ Python API Automation Framework
 
 # General Rules
 
-- Do not rename existing folders.
-- Do not create unnecessary folders.
+- Do not rename existing folders, Ask First
+- Do not create unnecessary folders, Ask First
 - Reuse existing helper functions.
 - Never hardcode URLs.
 - Always read configuration from .env.

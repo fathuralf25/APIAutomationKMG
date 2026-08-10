@@ -1,7 +1,7 @@
 import pytest
 import copy
 from utils.logger import get_logger
-from utils.evidence_collector import evidence_collector
+from helpers.evidence_collector import evidence_collector
 from utils.generators import (
     generate_transaction_number, generate_ktp, today, 
     generate_tanggal_lahir, calculate_tanggal_akhir_asuransi, calculate_usia

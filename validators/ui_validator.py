@@ -1,6 +1,6 @@
 from utils.logger import get_logger
-from utils.qr_scanner import download_and_scan_policy_qr
-from utils.ui_acs import check_polis_in_acs
+from helpers.qr_scanner import download_and_scan_policy_qr
+from helpers.ui_acs import check_polis_in_acs
 
 logger = get_logger(__name__)
 

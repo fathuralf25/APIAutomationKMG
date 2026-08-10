@@ -1,6 +1,6 @@
 import copy
 from utils.logger import get_logger
-from utils.payload_factory import build_dynamic_payload
+from helpers.payload_factory import build_dynamic_payload
 from api.endpoints import SUBMIT_DRAFT_AKSEPTASI, INQUIRY_LOAN, OTORISASI, PAYMENT, PEMBATALAN
 from validators.db_validator import validate_draft_akseptasi, validate_terbit_polis
 from validators.ui_validator import validate_polis_ui_and_qr

@@ -1,9 +1,9 @@
 import pytest
 import pandas as pd
 
-from utils.payload_factory import build_dynamic_payload
+from helpers.payload_factory import build_dynamic_payload
 from utils.logger import get_logger
-from utils.evidence_collector import evidence_collector
+from helpers.evidence_collector import evidence_collector
 from api.endpoints import KALKULATOR, SUBMIT_DRAFT_AKSEPTASI, INQUIRY_LOAN, OTORISASI, PAYMENT, PEMBATALAN
 
 from flows.e2e_flow import run_full_e2e_flow, run_pembatalan_bertahap_flow, run_payment_e2e_flow, run_batal_polis_flow
@@ -86,18 +86,45 @@ def test_dynamic_scenarios(tc_id, api_client, db_client, state, base_payloads):
     
     negative_tcs = ["TC-2", "TC-3", "TC-7", "TC-9", "TC-11", "TC-13", "TC-14", "TC-15", "TC-16", "TC-17", "TC-18", "TC-19", "TC-21", "TC-22", "TC-23", "TC-24", "TC-25", "TC-26", "TC-27", "TC-33", "TC-34", "TC-35"]
     
-    original_exp = meta["expected"]
-    if not original_exp.startswith("1."): original_exp = f"1. {original_exp}"
+    original_exp = meta["expected"].strip()
     
-    # Remove existing "2. ..." if present to avoid duplication
+    import re
+    # Bersihkan numbering lama dan baris-baris terkait DB agar tidak duplikat
     lines = original_exp.split('\n')
-    cleaned_lines = [line for line in lines if not line.strip().startswith("2.")]
-    original_exp = "\n".join(cleaned_lines)
-    
-    meta["expected"] = f"{original_exp}\n2. data tidak kerecord di DB" if tc_id in negative_tcs else f"{original_exp}\n2. data DB sesuai dengan request postman"
-    if tc_id == "TC-11":
-        meta["expected"] = "1. {\n  \"status\": False,\n  \"message\": \"Nominal Pembayaran tidak sesuai dengan Nominal Premi yang sebenarnya\"\n}\n2. data tidak kerecord di DB"
+    cleaned_lines = []
+    for line in lines:
+        line = line.strip()
+        # Lewati baris yang mengandung validasi DB karena akan di-append di akhir
+        if "tersimpan dan termutasi" in line.lower() or "di database" in line.lower() or "ter-record" in line.lower() or "terecord" in line.lower():
+            continue
         
+        # Hapus penomoran seperti "1. ", "2. ", dst.
+        line = re.sub(r'^\d+\.\s*', '', line)
+        if line:
+            cleaned_lines.append(line)
+    
+    # Check if original_exp contains RAW JSON or "response api"
+    is_raw_json = "{" in original_exp or "response api" in original_exp.lower()
+    
+    # Refactor Expected Result agar lebih deskriptif (Business Rule Based) bukan RAW JSON
+    if tc_id in negative_tcs:
+        if tc_id == "TC-11":
+            meta["expected"] = "1. API menolak request karena nominal pembayaran salah.\n2. Response menampilkan pesan: 'Nominal Pembayaran tidak sesuai dengan Nominal Premi yang sebenarnya'.\n3. Data pembayaran tidak ter-record di Database."
+        else:
+            if not is_raw_json and "merespon dengan benar" not in original_exp.lower() and cleaned_lines:
+                exp_text = "\n".join([f"{i+1}. {x}" for i, x in enumerate(cleaned_lines)])
+                meta["expected"] = f"{exp_text}\n{len(cleaned_lines)+1}. Data tidak terecord atau termutasi di Database."
+            else:
+                meta["expected"] = "1. API menolak request dengan status gagal (400/422) dan mengembalikan pesan error validasi.\n2. Data tidak terecord atau termutasi di Database."
+    else:
+        # Positive / E2E Cases
+        if is_raw_json or "sistem merespon" in original_exp.lower():
+            meta["expected"] = "1. API berhasil memproses request (HTTP 200 OK).\n2. Field dinamis pada response (seperti nomor_transaksi, premi) ter-generate dengan format valid.\n3. Data tersimpan dan termutasi dengan benar di Database PostgreSQL."
+        else:
+            if not cleaned_lines:
+                cleaned_lines = ["API berhasil memproses request (HTTP 200 OK)."]
+            exp_text = "\n".join([f"{i+1}. {x}" for i, x in enumerate(cleaned_lines)])
+            meta["expected"] = f"{exp_text}\n{len(cleaned_lines)+1}. Data tersimpan dan termutasi dengan benar di Database PostgreSQL."
     evidence_collector.set_test_metadata(tc_id, meta["tc_name"], meta["expected"], meta["precondition"], meta.get("test_steps", ""))
     
     try:

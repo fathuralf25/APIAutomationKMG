@@ -26,6 +26,7 @@ except ImportError:
 try:
     from openpyxl import load_workbook
     from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+    from openpyxl.utils import get_column_letter
     HAS_OPENPYXL = True
 except ImportError:
     HAS_OPENPYXL = False
@@ -99,11 +100,16 @@ class ReportGenerator:
                 actual_json = data["api"][-1].get("response_json", {})
             if actual_json:
                 expected = data.get("expected_result", "")
+                status = data.get("status", "").lower()
+                
+                db_msg = ""
                 if "tidak kerecord" in expected.lower():
-                    db_msg = "2. data tidak kerecord di DB"
+                    db_msg = "\n\n2. data tidak kerecord di DB"
                 else:
-                    db_msg = "2. data DB sesuai dengan request postman"
-                data["actual_result"] = "1. Response API:\n" + json.dumps(actual_json, indent=2) + "\n\n" + db_msg
+                    if status != "failed":
+                        db_msg = "\n\n2. data DB sesuai dengan request postman"
+                
+                data["actual_result"] = "1. Response API:\n" + json.dumps(actual_json, indent=2) + db_msg
             else:
                 data["actual_result"] = ""
 
@@ -553,14 +559,7 @@ class ReportGenerator:
                     if data.get("api") and len(data["api"]) > 0:
                         actual_json = data["api"][-1].get("response_json", {})
                         if actual_json:
-                            # Use status to determine DB message for Actual Result
-                            expected = data.get("expected_result", "")
-                            if "tidak kerecord" in expected.lower():
-                                db_msg = "2. data tidak kerecord di DB"
-                            else:
-                                db_msg = "2. data DB sesuai dengan request postman"
-                                
-                            ws.cell(row=row, column=12).value = "1. Response API:\n" + json.dumps(actual_json, indent=2) + "\n\n" + db_msg
+                            ws.cell(row=row, column=12).value = "1. Response API:\n" + json.dumps(actual_json, indent=2)
                             ws.cell(row=row, column=12).alignment = Alignment(wrap_text=True, vertical="top")
                             
                     ws.cell(row=row, column=11).value = data.get("status", "Failed")
@@ -609,7 +608,7 @@ class ReportGenerator:
 
             # Format Header Row (Row 3): Blue background, White text, Bold
             header_fill = PatternFill(start_color="003366", end_color="003366", fill_type="solid")
-            header_font = Font(color="FFFFFF", bold=True)
+            header_font = Font(color="FFFFFF", bold=True, size=16)
             for col in range(1, ws.max_column + 1):
                 header_cell = ws.cell(row=3, column=col)
                 header_cell.fill = header_fill
@@ -619,7 +618,7 @@ class ReportGenerator:
             # Rename Notes (Column 12) to Actual Result
             ws.cell(row=3, column=12).value = "Actual Result"
 
-            # Apply Full Border to the table (Row 3 to Max Row)
+            # Apply Full Border to the table (Row 3 to Max Row) and Wrap Text for data rows
             thin_border = Border(left=Side(style='thin'), 
                                  right=Side(style='thin'), 
                                  top=Side(style='thin'), 
@@ -628,6 +627,34 @@ class ReportGenerator:
             for r in ws.iter_rows(min_row=3, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
                 for cell in r:
                     cell.border = thin_border
+                    if cell.row > 3:
+                        cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+            # Auto-fit column widths
+            for col_idx, col in enumerate(ws.columns, 1):
+                max_length = 0
+                col_letter = get_column_letter(col_idx)
+                for cell in col:
+                    if cell.row < 3:
+                        continue
+                    try:
+                        if cell.value:
+                            # Hitung panjang setiap baris dalam teks (karena ada newline)
+                            lines = str(cell.value).split('\n')
+                            longest_line = max(len(line) for line in lines)
+                            if longest_line > max_length:
+                                max_length = longest_line
+                    except:
+                        pass
+                
+                # Tambahkan sedikit padding
+                adjusted_width = max_length + 2
+                
+                # Batasi lebar maksimal agar tidak terlalu lebar (misal max 50)
+                if adjusted_width > 50:
+                    adjusted_width = 50
+                
+                ws.column_dimensions[col_letter].width = adjusted_width
 
             # Save the final file to reports only (do not overwrite master test_script.xlsx)
             wb.save(output_file)
@@ -656,24 +683,38 @@ class ReportGenerator:
         return f"DEF-{count}"
 
     def generate_defect_reports(self, evidences: dict, prefix: str):
-        for tc_id, data in evidences.items():
-            if data.get("status", "").lower() != "failed":
-                continue
-                
-            try:
+        failed_tcs = [tc_id for tc_id, data in evidences.items() if data.get("status", "").lower() == "failed"]
+        if not failed_tcs:
+            return
+
+        try:
+            import copy
+            doc = Document('collections/TEMPLATE_Defect Report.docx')
+            if not doc.tables:
+                print("Template docx doesn't have tables")
+                return
+
+            template_tbl_element = copy.deepcopy(doc.tables[0]._element)
+            is_first = True
+
+            for tc_id in failed_tcs:
+                data = evidences[tc_id]
                 def_id = self.get_next_defect_id()
-                doc = Document('collections/TEMPLATE_Defect Report.docx')
-                if not doc.tables:
-                    print(f"Template docx doesn't have tables for {tc_id}")
-                    continue
-                    
-                table = doc.tables[0]
+                
+                if not is_first:
+                    doc.add_page_break()
+                    new_tbl = copy.deepcopy(template_tbl_element)
+                    doc._body._element.append(new_tbl)
+                    table = doc.tables[-1]
+                else:
+                    table = doc.tables[0]
+                    is_first = False
                 
                 table.cell(0, 1).text = str(tc_id)
                 table.cell(1, 1).text = def_id
                 
                 expected = data.get("expected_result", "Test execution failed.")
-                table.cell(3, 1).text = f"Test execution failed.\nExpected: {expected}"
+                table.cell(3, 1).text = f"Test execution failed.\n Expected: \n {expected}"
                 
                 cell_4_1 = table.cell(4, 1)
                 cell_4_1.text = "" 
@@ -735,41 +776,41 @@ class ReportGenerator:
                         except Exception as e:
                             p.add_run(f"[Gagal melampirkan screenshot {sys_name}: {e}]\n")
                             
-                def setup_footer(footer_obj):
-                    for p_footer in footer_obj.paragraphs:
-                        p_footer.text = ""
-                        pPr = p_footer._p.get_or_add_pPr()
-                        pBdr = pPr.find(qn('w:pBdr'))
-                        if pBdr is not None:
-                            pPr.remove(pBdr)
-                    for t in footer_obj.tables:
-                        t._element.getparent().remove(t._element)
-                        
-                    footer_table = footer_obj.add_table(rows=1, cols=1, width=Inches(0.5))
-                    footer_table.alignment = WD_TABLE_ALIGNMENT.RIGHT
-                    footer_table.autofit = False
-                    footer_table.columns[0].width = Inches(0.5)
+            def setup_footer(footer_obj):
+                for p_footer in footer_obj.paragraphs:
+                    p_footer.text = ""
+                    pPr = p_footer._p.get_or_add_pPr()
+                    pBdr = pPr.find(qn('w:pBdr'))
+                    if pBdr is not None:
+                        pPr.remove(pBdr)
+                for t in footer_obj.tables:
+                    t._element.getparent().remove(t._element)
                     
-                    cell = footer_table.cell(0, 0)
-                    set_cell_background(cell, '17375E')
-                    
-                    p_cell = cell.paragraphs[0]
-                    p_cell.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    run = p_cell.add_run()
-                    run.font.size = Pt(11)
-                    run.bold = True
-                    run.font.color.rgb = RGBColor(255, 255, 255)
-                    add_page_number(run)
-
-                for section in doc.sections:
-                    setup_footer(section.footer)
-                            
-                out_file = f"reports/defects/{prefix}Defect_Report_{def_id}_{tc_id}.docx"
-                os.makedirs(os.path.dirname(out_file), exist_ok=True)
-                doc.save(out_file)
-                print(f"Defect report generated successfully: {out_file}")
+                footer_table = footer_obj.add_table(rows=1, cols=1, width=Inches(0.5))
+                footer_table.alignment = WD_TABLE_ALIGNMENT.RIGHT
+                footer_table.autofit = False
+                footer_table.columns[0].width = Inches(0.5)
                 
-            except Exception as e:
-                print(f"Failed to generate defect report for {tc_id}: {e}\n{traceback.format_exc()}")
+                cell = footer_table.cell(0, 0)
+                set_cell_background(cell, '17375E')
+                
+                p_cell = cell.paragraphs[0]
+                p_cell.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = p_cell.add_run()
+                run.font.size = Pt(11)
+                run.bold = True
+                run.font.color.rgb = RGBColor(255, 255, 255)
+                add_page_number(run)
+
+            for section in doc.sections:
+                setup_footer(section.footer)
+                        
+            out_file = f"reports/defects/{prefix}Defect_Report.docx"
+            os.makedirs(os.path.dirname(out_file), exist_ok=True)
+            doc.save(out_file)
+            print(f"Defect report generated successfully: {out_file}")
+            
+        except Exception as e:
+            print(f"Failed to generate merged defect report: {e}\n{traceback.format_exc()}")
 
 report_generator = ReportGenerator()
