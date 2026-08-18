@@ -6,7 +6,7 @@ from utils.logger import get_logger
 from helpers.evidence_collector import evidence_collector
 from api.endpoints import KALKULATOR, SUBMIT_DRAFT_AKSEPTASI, INQUIRY_LOAN, OTORISASI, PAYMENT, PEMBATALAN
 
-from flows.e2e_flow import run_full_e2e_flow, run_pembatalan_bertahap_flow, run_payment_e2e_flow, run_batal_polis_flow
+from flows.e2e_flow import run_full_e2e_flow, run_pembatalan_bertahap_flow, run_payment_e2e_flow, run_batal_polis_flow, run_multi_fasilitas_flow
 from validators.db_validator import validate_draft_akseptasi, validate_terbit_polis
 from validators.ui_validator import validate_polis_ui_and_qr
 
@@ -15,6 +15,11 @@ logger = get_logger(__name__)
 def generate_test_steps(tc_id: str, ag: str) -> str:
     if tc_id in ["TC-30", "TC-31"]:
         return "1. Hit API Submit Draft Akseptasi\n2. Melakukan DB Validation\n3. Hit API Inquiry Loan\n4. Hit API Otorisasi Penyelia\n5. Hit API Payment\n6. Melakukan DB Validation\n7. Pengecekan Scan QR & Lampiran E-Polis\n8. Pengecekan UI (ACS/FMS)\n9. Tabel Validasi Nilai Premi"
+    if tc_id in ["TC-37", "TC-38", "TC-41"]:
+        prep_text = "(UP 50jt, Tenor 180 Bulan)" if tc_id == "TC-41" else "(UP 50jt)"
+        return f"1. Persiapan Data: Generate KTP Baru, Submit Draft {prep_text} -> Inquiry -> Otorisasi -> Payment (Polis Terbit)\n2. Hit API Submit Draft Akseptasi dengan UP 450 Juta (Batas Valid) atau 450 Juta 1 Rupiah (Overlimit)\n3. Menampilkan Tabel Validasi Akumulasi Multi Fasilitas"
+    if tc_id in ["TC-39", "TC-40"]:
+        return "1. Persiapan Data: Generate KTP Baru, Submit Draft (UP 50jt) -> Inquiry -> Otorisasi -> Payment (Polis Terbit)\n2. Hit API Kalkulator Premi dengan UP 450 Juta (Batas Valid) atau 450 Juta 1 Rupiah (Overlimit)\n3. Menampilkan Tabel Validasi Akumulasi Multi Fasilitas"
 
     ag_low = ag.lower()
     if "a6" in ag_low or "pembayaran" in ag_low:
@@ -25,6 +30,8 @@ def generate_test_steps(tc_id: str, ag: str) -> str:
         return "1. Hit API Submit Draft Akseptasi\n2. Hit API Inquiry Loan\n3. Melakukan DB Validation"
     elif "a7" in ag_low or "pembatalan" in ag_low:
         return "1. Hit API Submit Draft Akseptasi\n2. Hit API Pembatalan\n3. Melakukan DB Validation"
+    elif "a1" in ag_low or "kalkulasi" in ag_low or "kalkulator" in ag_low:
+        return "1. Hit API Kalkulator Premi"
     else:
         return "1. Hit API Submit Draft Akseptasi\n2. Melakukan DB Validation"
 
@@ -52,6 +59,7 @@ def get_test_cases_and_metadata():
                         elif "otorisasi" in exp_lower or "otorisasi" in ts_lower: api_group = "a5"
                         elif "inquiry" in exp_lower or "loan" in exp_lower or "inquiry" in ts_lower or "loan" in ts_lower: api_group = "a4"
                         elif "batal" in exp_lower or "cancel" in exp_lower or "batal" in ts_lower or "cancel" in ts_lower: api_group = "a7"
+                        elif any(x in exp_lower or x in ts_lower for x in ["kalkulasi", "kalkulator"]): api_group = "a1"
                         else: api_group = "a2"
 
                     metadata[tc_id] = {
@@ -84,7 +92,7 @@ def test_dynamic_scenarios(tc_id, api_client, db_client, state, base_payloads):
     logger.info(f"Executing {tc_id} dynamically...")
     meta = TEST_METADATA.get(tc_id, {"tc_name": tc_id, "expected": "Sistem merespon dengan benar", "precondition": "", "api_group": ""})
     
-    negative_tcs = ["TC-2", "TC-3", "TC-7", "TC-9", "TC-11", "TC-13", "TC-14", "TC-15", "TC-16", "TC-17", "TC-18", "TC-19", "TC-21", "TC-22", "TC-23", "TC-24", "TC-25", "TC-26", "TC-27", "TC-33", "TC-34", "TC-35"]
+    negative_tcs = ["TC-2", "TC-3", "TC-7", "TC-9", "TC-11", "TC-13", "TC-14", "TC-15", "TC-16", "TC-17", "TC-18", "TC-19", "TC-21", "TC-22", "TC-23", "TC-24", "TC-25", "TC-26", "TC-27", "TC-32", "TC-33", "TC-34", "TC-35", "TC-38", "TC-40"]
     
     original_exp = meta["expected"].strip()
     
@@ -132,6 +140,9 @@ def test_dynamic_scenarios(tc_id, api_client, db_client, state, base_payloads):
         # 1. Custom E2E Flows
         if tc_id in ["TC-30", "TC-31"]:
             run_full_e2e_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta)
+            return
+        elif tc_id in ["TC-37", "TC-38", "TC-39", "TC-40", "TC-41"]:
+            run_multi_fasilitas_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta)
             return
         elif tc_id == "TC-29":
             run_pembatalan_bertahap_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta)

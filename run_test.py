@@ -7,7 +7,13 @@ def main():
     print("="*50)
     
     project_code = input("Masukkan Project Code (kosongkan untuk default PRJ-000): ").strip()
-    report_title = input("Masukkan Judul Laporan (kosongkan untuk default): ").strip()
+    
+    while True:
+        report_title = input("Masukkan Judul Laporan (kosongkan untuk default, maks 65 karakter): ").strip()
+        if len(report_title) > 65:
+            print("[WARNING] Judul terlalu panjang (maksimal 65 karakter). Silakan ulangi.")
+        else:
+            break
 
     if project_code:
         os.environ["PROJECT_CODE"] = project_code

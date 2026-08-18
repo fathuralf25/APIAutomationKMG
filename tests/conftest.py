@@ -53,28 +53,6 @@ def base_payloads():
         "pembatalan": load_payload("pembatalan_draft_akseptasi.json")
     }
 
-@pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_makereport(item, call):
-    pytest_html = item.config.pluginmanager.getplugin("html")
-    outcome = yield
-    report = outcome.get_result()
-    extra = getattr(report, "extra", [])
-    
-    if report.when == "call":
-        report.extra = extra
-        if report.failed:
-            # User specifically requested this fail-catch logic only for TC-34 and TC-TRIAL-1
-            tc_id = None
-            if hasattr(item, 'callspec') and 'tc_id' in item.callspec.params:
-                if item.callspec.params['tc_id'] == "TC-34":
-                    tc_id = "TC-34"
-            elif item.name == "test_trial_resubmit_cancelled_akseptasi":
-                tc_id = "TC-TRIAL-1"
-                
-            if tc_id:
-                
-                evidence_collector.set_test_status(tc_id, "Failed")
-
 def pytest_collection_modifyitems(config, items):
     for item in items:
         # Dynamically add marker for tc_id (e.g., 'TC-1' -> @pytest.mark.TC_1)
@@ -84,25 +62,8 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(getattr(pytest.mark, marker_name))
 
 def pytest_sessionstart(session):
-    
-    # Treat as trial if 'trial', 'sandbox', or 'selected' is in the command, or if we are filtering tests with '-k'
-    is_trial = any(kw in arg.lower() for arg in sys.argv for kw in ['trial', 'sandbox', 'selected']) or '-k' in sys.argv
-    if is_trial:
-        os.environ["TRIAL_RUN"] = "true"
-    else:
-        if "TRIAL_RUN" in os.environ:
-            del os.environ["TRIAL_RUN"]
-            
-    prefix = "trial_" if is_trial else ""
+    prefix = ""
 
-    # Hapus laporan sebelumnya agar hanya menyimpan yang terbaru
-    old_reports = glob.glob(f"reports/{prefix}Automation_Report_Batch_*")
-    for old in old_reports:
-        try:
-            os.remove(old)
-        except Exception:
-            pass
-            
     # Hapus images dari testing sebelumnya (tidak menghapus yg baru)
     old_images = glob.glob(f"reports/{prefix}epolis_*.png")
     for old in old_images:
@@ -134,16 +95,25 @@ def pytest_sessionstart(session):
         except Exception:
             pass
 
+    # Hapus file report lama dari testing sebelumnya
+    old_reports = []
+    for ext in ["*.pdf", "*.docx", "*.xlsx"]:
+        old_reports.extend(glob.glob(f"reports/{prefix}Automation_Report_Batch_{ext}"))
+        old_reports.extend(glob.glob(f"reports/{prefix}Defect_Report_{ext}"))
+    
+    for old in old_reports:
+        try:
+            os.remove(old)
+        except Exception:
+            pass
+
 def pytest_sessionfinish(session, exitstatus):
     """
     Generate the new beautiful Automation Report after tests finish.
     """
-    
-    is_trial = any(kw in arg.lower() for arg in sys.argv for kw in ['trial', 'sandbox', 'selected']) or '-k' in sys.argv
-    prefix = "trial_" if is_trial else ""
+    prefix = ""
 
-    
-    
+
     evidences = evidence_collector.get_all_evidences()
     if evidences:
         
@@ -160,6 +130,6 @@ def pytest_sessionfinish(session, exitstatus):
         excel_filename = f"reports/{prefix}Automation_Report_Batch_{timestamp}.xlsx"
         report_generator.generate_excel(evidences, excel_filename)
         
-        report_generator.generate_defect_reports(evidences, prefix)
+        report_generator.generate_defect_reports(evidences, prefix, timestamp)
         
         logger.info(f"Reports generated successfully: {pdf_filename}, {docx_filename}, {excel_filename}, and defect reports if any")

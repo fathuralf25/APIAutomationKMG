@@ -3,7 +3,7 @@
     "tanggal_lahir": "1985-06-15",
     "tanggal_rencana_realisasi": "2026-04-10",
     "tenor": 50,
-    "uang_pertanggungan": 5000000,
+    "uang_pertanggungan": 100000000,
     "produk": {
         "code": "KMG",
         "type": "01",

@@ -165,59 +165,100 @@ class ReportGenerator:
             project_code = os.environ.get("PROJECT_CODE", "PRJ-000")
             
             for p in doc.paragraphs:
-                is_title_or_code = False
+                # Cek jika REPORT_TITLE dan PROJECT_CODE ada di paragraf yang sama
+                if '{{REPORT_TITLE}}' in p.text and ('{{PROJECT_CODE}}' in p.text or '{{Project Code}}' in p.text):
+                    p.text = "" # Bersihkan teks paragraf
+                    
+                    # Run 1: Report Title
+                    run_title = p.add_run(report_title)
+                    run_title.font.name = 'Tahoma'
+                    run_title.font.size = Pt(20)
+                    run_title.font.bold = True
+                    
+                    # Line Break dengan jarak terkontrol agar tidak terlalu dempet
+                    run_gap = p.add_run('\n\n')
+                    run_gap.font.size = Pt(8)
+                    
+                    # Run 2: Project Code
+                    run_code = p.add_run(project_code)
+                    run_code.font.name = 'Tahoma'
+                    run_code.font.size = Pt(15)
+                    run_code.font.bold = True
+                    
+                    # Kembalikan line spacing ke normal agar jika judul wrap ke bawah tidak renggang
+                    p.paragraph_format.line_spacing = 1.5
+                    continue
+                    
+                is_report_title = False
+                is_project_code = False
                 is_date = False
 
-                if '{{REPORT_TITLE}}' in p.text or '{{PROJECT_CODE}}' in p.text:
-                    if '{{REPORT_TITLE}}' in p.text:
-                        p.text = p.text.replace('{{REPORT_TITLE}}', report_title)
-                    if '{{PROJECT_CODE}}' in p.text:
-                        p.text = p.text.replace('{{PROJECT_CODE}}', project_code)
-                    is_title_or_code = True
+                if '{{REPORT_TITLE}}' in p.text:
+                    p.text = p.text.replace('{{REPORT_TITLE}}', report_title)
+                    is_report_title = True
+                if '{{PROJECT_CODE}}' in p.text or '{{Project Code}}' in p.text:
+                    p.text = p.text.replace('{{PROJECT_CODE}}', project_code).replace('{{Project Code}}', project_code)
+                    is_project_code = True
                 
                 if '{{REPORT_DATE}}' in p.text:
                     p.text = p.text.replace('{{REPORT_DATE}}', current_date_cover)
                     is_date = True
                 
-                if is_title_or_code and p.runs:
+                if is_report_title and p.runs:
                     for run in p.runs:
                         run.font.name = 'Tahoma'
                         run.font.size = Pt(20)
                         run.font.bold = True
+                elif is_project_code and p.runs:
+                    for run in p.runs:
+                        run.font.name = 'Tahoma'
+                        run.font.size = Pt(15)
+                        run.font.bold = True
+                        p.paragraph_format.line_spacing = 2.5
                 elif is_date and p.runs:
                     for run in p.runs:
                         run.font.name = 'Tahoma'
-                        run.font.size = Pt(14)
+                        run.font.size = Pt(12)
                         run.font.bold = True
+                        p.paragraph_format.line_spacing = 5.5
 
             for table in doc.tables:
                 for row in table.rows:
                     for cell in row.cells:
                         for p in cell.paragraphs:
-                            is_title_or_code = False
+                            is_report_title = False
+                            is_project_code = False
                             is_date = False
 
-                            if '{{REPORT_TITLE}}' in p.text or '{{PROJECT_CODE}}' in p.text:
-                                if '{{REPORT_TITLE}}' in p.text:
-                                    p.text = p.text.replace('{{REPORT_TITLE}}', report_title)
-                                if '{{PROJECT_CODE}}' in p.text:
-                                    p.text = p.text.replace('{{PROJECT_CODE}}', project_code)
-                                is_title_or_code = True
+                            if '{{REPORT_TITLE}}' in p.text:
+                                p.text = p.text.replace('{{REPORT_TITLE}}', report_title)
+                                is_report_title = True
+                            if '{{PROJECT_CODE}}' in p.text or '{{Project Code}}' in p.text:
+                                p.text = p.text.replace('{{PROJECT_CODE}}', project_code).replace('{{Project Code}}', project_code)
+                                is_project_code = True
                             
                             if '{{REPORT_DATE}}' in p.text:
                                 p.text = p.text.replace('{{REPORT_DATE}}', current_date_cover)
                                 is_date = True
                             
-                            if is_title_or_code and p.runs:
+                            if is_report_title and p.runs:
                                 for run in p.runs:
                                     run.font.name = 'Tahoma'
                                     run.font.size = Pt(20)
                                     run.font.bold = True
+                            elif is_project_code and p.runs:
+                                for run in p.runs:
+                                    run.font.name = 'Tahoma'
+                                    run.font.size = Pt(14)
+                                    run.font.bold = True
+                                
                             elif is_date and p.runs:
                                 for run in p.runs:
                                     run.font.name = 'Tahoma'
                                     run.font.size = Pt(14)
                                     run.font.bold = True
+                                    
+
             
             # Set margins to prevent overlapping with footer
             for section in doc.sections:
@@ -310,6 +351,7 @@ class ReportGenerator:
                     elif "otorisasi" in endpoint_url: endpoint_name = "Otorisasi"
                     elif "payment" in endpoint_url or "pembayaran" in endpoint_url: endpoint_name = "Payment/Pembayaran"
                     elif "batal" in endpoint_url or "cancel" in endpoint_url: endpoint_name = "Pembatalan"
+                    elif "calculate" in endpoint_url or "kalkulator" in endpoint_url: endpoint_name = "Kalkulator Premi"
                     
                     p_step = doc.add_paragraph(f"\n[Test_Step_{step_counter}]: Hit API {endpoint_name} ({api['method']} {endpoint_url})", style='Heading 3')
                     p_step.paragraph_format.space_before = Pt(14)
@@ -504,6 +546,24 @@ class ReportGenerator:
                 # Aktifkan pengaturan 'Different First Page' agar cover beda dengan isinya
                 section.different_first_page_header_footer = True
                 
+                import copy
+                # Copy header dari halaman utama ke cover agar logo muncul
+                first_header = section.first_page_header
+                for el in list(first_header._element):
+                    first_header._element.remove(el)
+                for el in section.header._element:
+                    first_header._element.append(copy.deepcopy(el))
+                
+                # Copy relationships (seperti gambar logo) agar rId valid di header baru
+                for rel_id, rel in section.header.part.rels.items():
+                    if rel_id not in first_header.part.rels:
+                        first_header.part.rels.add_relationship(
+                            rel.reltype,
+                            rel._target,
+                            rel.rId,
+                            rel.is_external
+                        )
+                    
                 # Bersihkan footer di halaman pertama (Cover) agar tidak ada nomor halaman
                 first_footer = section.first_page_footer
                 for p in first_footer.paragraphs:
@@ -602,7 +662,7 @@ class ReportGenerator:
             project_code = os.environ.get("PROJECT_CODE", "PRJ-000")
             
             title_cell = ws.cell(row=1, column=1)
-            title_cell.value = f"Test Script - {report_title} ({project_code})"
+            title_cell.value = f"Test Script - {project_code} {report_title}"
             title_cell.font = Font(size=20, bold=True)
             title_cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
@@ -682,7 +742,7 @@ class ReportGenerator:
             print(f"Failed to save defect counter: {e}")
         return f"DEF-{count}"
 
-    def generate_defect_reports(self, evidences: dict, prefix: str):
+    def generate_defect_reports(self, evidences: dict, prefix: str, timestamp: str = None):
         failed_tcs = [tc_id for tc_id, data in evidences.items() if data.get("status", "").lower() == "failed"]
         if not failed_tcs:
             return
@@ -696,6 +756,7 @@ class ReportGenerator:
 
             template_tbl_element = copy.deepcopy(doc.tables[0]._element)
             is_first = True
+            tracker_rows = []
 
             for tc_id in failed_tcs:
                 data = evidences[tc_id]
@@ -719,19 +780,23 @@ class ReportGenerator:
                 cell_4_1 = table.cell(4, 1)
                 cell_4_1.text = "" 
                 
-                p = cell_4_1.add_paragraph(f"Tanggal execution test: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                p = cell_4_1.add_paragraph(f"Tanggal execution test: {current_time}\n")
                 
                 p.add_run("\nStep to reproduce:\n").bold = True
                 
                 step_counter = 1
+                api_endpoints = []
                 for api in data.get("api", []):
                     endpoint_url = api.get('url', '')
+                    api_endpoints.append(endpoint_url)
                     endpoint_name = "API"
                     if "draft-akseptasi" in endpoint_url: endpoint_name = "Draft Akseptasi"
                     elif "inquiry" in endpoint_url: endpoint_name = "Inquiry Loan"
                     elif "otorisasi" in endpoint_url: endpoint_name = "Otorisasi"
                     elif "payment" in endpoint_url or "pembayaran" in endpoint_url: endpoint_name = "Payment/Pembayaran"
                     elif "batal" in endpoint_url or "cancel" in endpoint_url: endpoint_name = "Pembatalan"
+                    elif "calculate" in endpoint_url or "kalkulator" in endpoint_url: endpoint_name = "Kalkulator Premi"
                     
                     p.add_run(f"{step_counter}. Hit {endpoint_name} ({api.get('method', 'POST')} {endpoint_url})\n")
                     step_counter += 1
@@ -752,9 +817,31 @@ class ReportGenerator:
                 
                 if data.get("db") and len(data["db"]) > 0:
                     last_db = data["db"][-1]
-                    db_res = json.dumps(last_db.get('result', []), indent=2, default=str)
-                    p.add_run(f"DB Result:\n{db_res}\n\n")
+                    db_results = last_db.get('result', [])
+                    p.add_run("\nDB Result:\n").bold = True
                     
+                    if db_results and isinstance(db_results, list) and isinstance(db_results[0], dict):
+                        headers = list(db_results[0].keys())
+                        db_table = cell_4_1.add_table(rows=1, cols=len(headers))
+                        db_table.style = 'Table Grid'
+                        
+                        hdr_cells = db_table.rows[0].cells
+                        for i, header in enumerate(headers):
+                            hdr_cells[i].text = str(header)
+                            for paragraph in hdr_cells[i].paragraphs:
+                                for run in paragraph.runs:
+                                    run.bold = True
+                                    
+                        for row_data in db_results:
+                            row_cells = db_table.add_row().cells
+                            for i, header in enumerate(headers):
+                                row_cells[i].text = str(row_data.get(header, ""))
+                        
+                        p = cell_4_1.add_paragraph("\n")
+                    else:
+                        db_res = json.dumps(db_results, indent=2, default=str)
+                        p.add_run(f"{db_res}\n\n")
+
                 if "epolis" in data:
                     epolis = data["epolis"]
                     p.add_run(f"Terjemahan QR Code: {epolis.get('qr_result', 'N/A')}\n\n")
@@ -775,6 +862,28 @@ class ReportGenerator:
                             p.add_run("\n")
                         except Exception as e:
                             p.add_run(f"[Gagal melampirkan screenshot {sys_name}: {e}]\n")
+                            
+                # Collect for tracker
+                endpoints_str = ", ".join(api_endpoints)
+                actual_error_summary = "Failed during API execution"
+                if "db" in data and len(data["db"]) > 0:
+                    actual_error_summary = "Failed during DB Validation"
+                if "ui" in data:
+                    actual_error_summary = "Failed during UI Validation"
+                    
+                if data.get("api") and len(data["api"]) > 0:
+                    last_api = data["api"][-1]
+                    if last_api.get("response_status", 200) >= 400:
+                        actual_error_summary = f"API Error {last_api.get('response_status')}"
+                        
+                tracker_rows.append([
+                    def_id, 
+                    current_time, 
+                    str(tc_id), 
+                    endpoints_str, 
+                    str(expected), 
+                    actual_error_summary
+                ])
                             
             def setup_footer(footer_obj):
                 for p_footer in footer_obj.paragraphs:
@@ -805,10 +914,39 @@ class ReportGenerator:
             for section in doc.sections:
                 setup_footer(section.footer)
                         
-            out_file = f"reports/defects/{prefix}Defect_Report.docx"
+            if timestamp:
+                out_file = f"reports/defects/{prefix}Defect_Report_{timestamp}.docx"
+            else:
+                out_file = f"reports/defects/{prefix}Defect_Report.docx"
+                
             os.makedirs(os.path.dirname(out_file), exist_ok=True)
             doc.save(out_file)
             print(f"Defect report generated successfully: {out_file}")
+            
+            # Update Master Tracker Excel
+            if HAS_OPENPYXL and tracker_rows:
+                from openpyxl import Workbook, load_workbook
+                tracker_file = "reports/defects/Master_Defect_Tracker.xlsx"
+                os.makedirs(os.path.dirname(tracker_file), exist_ok=True)
+                
+                if os.path.exists(tracker_file):
+                    wb = load_workbook(tracker_file)
+                    ws = wb.active
+                else:
+                    wb = Workbook()
+                    ws = wb.active
+                    ws.title = "Defect Tracker"
+                    headers = ["Defect ID", "Timestamp", "Test Case ID", "API Endpoint", "Expected Result", "Actual Error Summary"]
+                    ws.append(headers)
+                    from openpyxl.styles import Font
+                    for cell in ws[1]:
+                        cell.font = Font(bold=True)
+                        
+                for row in tracker_rows:
+                    ws.append(row)
+                    
+                wb.save(tracker_file)
+                print(f"Master Defect Tracker updated: {tracker_file}")
             
         except Exception as e:
             print(f"Failed to generate merged defect report: {e}\n{traceback.format_exc()}")
