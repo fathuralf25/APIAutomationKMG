@@ -220,7 +220,8 @@ def run_payment_e2e_flow(tc_id, api_client, db_client, state, base_payloads, evi
         assert resp_pay.status_code in [400, 422], f"Expected fail but got {resp_pay.status_code}"
         # Validate DB (Record not found or no polis)
         validate_terbit_polis(db_client, trx, tc_id, evidence_collector)
-        evidence_collector.evidences[tc_id]["db"][-1]["result"] = [{"Validasi DB": "Record not found (Expected karena API gagal validasi / ditolak)", "Response API": resp_pay.json().get("message", "Error"), "Status Code": resp_pay.status_code}]
+        if evidence_collector.evidences[tc_id]["db"]:
+            evidence_collector.evidences[tc_id]["db"][-1]["result"] = [{"Validasi DB": "Record not found (Expected karena API gagal validasi / ditolak)", "Response API": resp_pay.json().get("message", "Error"), "Status Code": resp_pay.status_code}]
     else:
         assert resp_pay.status_code == 200, f"Payment failed: {resp_pay.text}"
         db_result = validate_terbit_polis(db_client, trx, tc_id, evidence_collector)
@@ -228,14 +229,24 @@ def run_payment_e2e_flow(tc_id, api_client, db_client, state, base_payloads, evi
             no_sertifikat = db_result[0].get("no_sertifikat")
             url_download = db_result[0].get("url_download_sertifikat")
             validate_polis_ui_and_qr(tc_id, no_sertifikat, url_download, trx, resp_submit.json(), db_result, evidence_collector)
-            for row in evidence_collector.evidences[tc_id]["db"][-1]["result"]:
-                if isinstance(row, dict):
-                    row["Validasi DB"] = "Data Ditemukan (Polis Terbit)"
-                    row["Response API"] = resp_pay.json().get("message", "Success")
-                    row["Status Code"] = resp_pay.status_code
+            if evidence_collector.evidences[tc_id]["db"]:
+                for row in evidence_collector.evidences[tc_id]["db"][-1]["result"]:
+                    if isinstance(row, dict):
+                        row["Validasi DB"] = "Data Ditemukan (Polis Terbit)"
+                        row["Response API"] = resp_pay.json().get("message", "Success")
+                        row["Status Code"] = resp_pay.status_code
 
     meta["status"] = "Passed"
     evidence_collector.set_test_status(tc_id, meta["status"])
+    if not is_negative_payment and 'no_sertifikat' in locals():
+        return {
+            "nomor_transaksi": trx,
+            "nomor_loan": loan,
+            "nomor_sertifikat": no_sertifikat,
+            "premi": premi,
+            "tenor": payload_submit.get("tenor", 12)
+        }
+    return None
 
 
 def run_batal_polis_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta):
@@ -462,3 +473,23 @@ def run_multi_fasilitas_flow(tc_id, api_client, db_client, state, base_payloads,
             no_sertifikat = db_result[0].get("no_sertifikat")
             url_download = db_result[0].get("url_download_sertifikat")
             validate_polis_ui_and_qr(tc_id, no_sertifikat, url_download, new_trx, data_main, db_result, evidence_collector)
+
+def run_multi_fasilitas_complex_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta):
+    logger.warning(f"Flow {tc_id} (run_multi_fasilitas_complex_flow) belum diimplementasikan sepenuhnya.")
+    meta["status"] = "Failed"
+    evidence_collector.set_test_status(tc_id, meta["status"])
+
+def run_multi_fasilitas_complex_payment_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta):
+    logger.warning(f"Flow {tc_id} (run_multi_fasilitas_complex_payment_flow) belum diimplementasikan sepenuhnya.")
+    meta["status"] = "Failed"
+    evidence_collector.set_test_status(tc_id, meta["status"])
+
+def run_multi_fasilitas_batal_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta):
+    logger.warning(f"Flow {tc_id} (run_multi_fasilitas_batal_flow) belum diimplementasikan sepenuhnya.")
+    meta["status"] = "Failed"
+    evidence_collector.set_test_status(tc_id, meta["status"])
+
+def run_multi_fasilitas_akumulasi_response_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta):
+    logger.warning(f"Flow {tc_id} (run_multi_fasilitas_akumulasi_response_flow) belum diimplementasikan sepenuhnya.")
+    meta["status"] = "Failed"
+    evidence_collector.set_test_status(tc_id, meta["status"])

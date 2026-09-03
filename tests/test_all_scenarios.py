@@ -5,8 +5,7 @@ from helpers.payload_factory import build_dynamic_payload
 from utils.logger import get_logger
 from helpers.evidence_collector import evidence_collector
 from api.endpoints import KALKULATOR, SUBMIT_DRAFT_AKSEPTASI, INQUIRY_LOAN, OTORISASI, PAYMENT, PEMBATALAN
-
-from flows.e2e_flow import run_full_e2e_flow, run_pembatalan_bertahap_flow, run_payment_e2e_flow, run_batal_polis_flow, run_multi_fasilitas_flow
+from flows.e2e_flow import run_full_e2e_flow, run_pembatalan_bertahap_flow, run_payment_e2e_flow, run_batal_polis_flow, run_multi_fasilitas_flow, run_multi_fasilitas_complex_flow, run_multi_fasilitas_complex_payment_flow, run_multi_fasilitas_batal_flow, run_multi_fasilitas_akumulasi_response_flow
 from validators.db_validator import validate_draft_akseptasi, validate_terbit_polis
 from validators.ui_validator import validate_polis_ui_and_qr
 
@@ -15,6 +14,12 @@ logger = get_logger(__name__)
 def generate_test_steps(tc_id: str, ag: str) -> str:
     if tc_id in ["TC-30", "TC-31"]:
         return "1. Hit API Submit Draft Akseptasi\n2. Melakukan DB Validation\n3. Hit API Inquiry Loan\n4. Hit API Otorisasi Penyelia\n5. Hit API Payment\n6. Melakukan DB Validation\n7. Pengecekan Scan QR & Lampiran E-Polis\n8. Pengecekan UI (ACS/FMS)\n9. Tabel Validasi Nilai Premi"
+    if tc_id == "TC-42":
+        return "1. Pengajuan 1: Submit (UP 300jt) -> Inquiry (Out: 200jt)\n2. Pengajuan 2: Submit (UP 200jt) -> Inquiry (Out: 200jt)\n3. Pengajuan 3: Submit (UP 100jt) -> Inquiry (Out: 50jt)\n4. Pengajuan 4: Submit (UP 100jt) -> Ditolak (Limit Akumulasi > 500jt)\n5. Validasi DB Tabel Limit Akumulasi"
+    if tc_id == "TC-43":
+        return "1. Pengajuan 1: Submit (UP 300jt) -> Inquiry -> Otorisasi -> Payment (Polis Terbit)\n2. Pengajuan 2: Submit (UP 200jt) -> Inquiry -> Otorisasi -> Payment (Polis Terbit)\n3. Pengajuan 3: Submit (UP 100jt) -> Inquiry -> Otorisasi -> Payment (Polis Terbit)\n4. Pengajuan 4: Submit (UP 100jt) -> Ditolak (Limit Akumulasi > 500jt)\n5. Validasi DB Tabel Limit Akumulasi & Pengecekan ACS, FMS"
+    if tc_id == "TC-44":
+        return "1. Pengajuan 1: Submit (UP 300jt) -> Inquiry (Out: 200jt)\n2. Pengajuan 2: Submit (UP 200jt) -> Inquiry (Out: 200jt)\n3. Pengajuan 3: Submit (UP 100jt) -> Inquiry (Out: 50jt)\n4. Pembatalan Pengajuan 3\n5. Pengajuan 4: Submit (UP 100jt) -> Inquiry (Out: 100jt)\n6. Pengajuan 5: Submit (UP 50jt) -> Ditolak (Limit Akumulasi > 500jt)\n7. Validasi DB Tabel Limit Akumulasi"
     if tc_id in ["TC-37", "TC-38", "TC-41"]:
         prep_text = "(UP 50jt, Tenor 180 Bulan)" if tc_id == "TC-41" else "(UP 50jt)"
         return f"1. Persiapan Data: Generate KTP Baru, Submit Draft {prep_text} -> Inquiry -> Otorisasi -> Payment (Polis Terbit)\n2. Hit API Submit Draft Akseptasi dengan UP 450 Juta (Batas Valid) atau 450 Juta 1 Rupiah (Overlimit)\n3. Menampilkan Tabel Validasi Akumulasi Multi Fasilitas"
@@ -65,12 +70,13 @@ def get_test_cases_and_metadata():
                     metadata[tc_id] = {
                         "tc_name": tc_name, "status": "Failed", "api": [], "db": [],
                         "expected": expected, "precondition": precondition, "api_group": api_group,
-                        "test_steps": generate_test_steps(tc_id, api_group)
+                        "test_steps": raw_test_step if raw_test_step and "postman" not in raw_test_step.lower() else generate_test_steps(tc_id, api_group)
                     }
         
         if "TC-10" in cases and "TC-11" in cases:
             idx_10, idx_11 = cases.index("TC-10"), cases.index("TC-11")
             if idx_10 < idx_11: cases[idx_10], cases[idx_11] = cases[idx_11], cases[idx_10]
+        
         return cases, metadata
     except Exception as e:
         logger.error(f"Error reading test cases: {e}")
@@ -92,7 +98,7 @@ def test_dynamic_scenarios(tc_id, api_client, db_client, state, base_payloads):
     logger.info(f"Executing {tc_id} dynamically...")
     meta = TEST_METADATA.get(tc_id, {"tc_name": tc_id, "expected": "Sistem merespon dengan benar", "precondition": "", "api_group": ""})
     
-    negative_tcs = ["TC-2", "TC-3", "TC-7", "TC-9", "TC-11", "TC-13", "TC-14", "TC-15", "TC-16", "TC-17", "TC-18", "TC-19", "TC-21", "TC-22", "TC-23", "TC-24", "TC-25", "TC-26", "TC-27", "TC-32", "TC-33", "TC-34", "TC-35", "TC-38", "TC-40"]
+    negative_tcs = ["TC-2", "TC-3", "TC-7", "TC-9", "TC-11", "TC-13", "TC-14", "TC-15", "TC-16", "TC-17", "TC-18", "TC-19", "TC-21", "TC-22", "TC-23", "TC-24", "TC-25", "TC-26", "TC-27", "TC-32", "TC-33", "TC-34", "TC-35", "TC-38", "TC-40", "TC-42", "TC-43", "TC-44"]
     
     original_exp = meta["expected"].strip()
     
@@ -141,6 +147,15 @@ def test_dynamic_scenarios(tc_id, api_client, db_client, state, base_payloads):
         if tc_id in ["TC-30", "TC-31"]:
             run_full_e2e_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta)
             return
+        elif tc_id == "TC-42":
+            run_multi_fasilitas_complex_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta)
+            return
+        elif tc_id == "TC-43":
+            run_multi_fasilitas_complex_payment_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta)
+            return
+        elif tc_id == "TC-44":
+            run_multi_fasilitas_batal_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta)
+            return
         elif tc_id in ["TC-37", "TC-38", "TC-39", "TC-40", "TC-41"]:
             run_multi_fasilitas_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta)
             return
@@ -152,6 +167,9 @@ def test_dynamic_scenarios(tc_id, api_client, db_client, state, base_payloads):
             return
         elif tc_id == "TC-13":
             run_batal_polis_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta)
+            return
+        elif tc_id == "TC-45":
+            run_multi_fasilitas_akumulasi_response_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta)
             return
 
         # 2. Normal Flow

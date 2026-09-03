@@ -23,8 +23,13 @@ def main():
     print("\nPilih mode eksekusi:")
     print("1. Run Semua Test Scenarios")
     print("2. Run Selected Test (berdasarkan nomor TC)")
+    print("3. Quit")
     
-    pilihan = input("Masukkan pilihan (1/2): ").strip()
+    pilihan = input("Masukkan pilihan (1/2/3): ").strip().lower()
+    
+    if pilihan in ["3", "q", "quit", "exit"]:
+        print("\n[INFO] Membatalkan eksekusi runner. Keluar dari program...")
+        return
     
     pytest_args = ["pytest", "tests/test_all_scenarios.py", "-v"]
     

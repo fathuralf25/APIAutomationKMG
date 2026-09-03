@@ -1,0 +1,20 @@
+{
+    "nomor_loan": "LN-596979",
+    "jenis_restitusi": "PERLUNASAN DIPERCEPAT",
+    "transaction_type": "REFUND",
+    "tanggal_restitusi": "2026-09-28",
+    "keterangan": "Pelunasan dipercepat oleh debitur",
+    "rekening_tujuan": {
+        "nama_bank": "BCA",
+        "no_rekening": "1934567989",
+        "nama_pemilik": "KATSIUI"
+    },
+    "nilai_pengajuan": 362500,
+    "files_dokumen_base64": [
+        {
+            "name_file": "dokumen_restitusi_1.pdf",
+            "mime_type": "application/pdf",
+            "content": "JVBERi0xLjQKMSAwIG9iajw8L1R5cGUvQ2F0YWxvZy9QYWdlcyAyIDAgUj4+ZW5kb2JqIDIgMCBvYmo8PC9UeXBlL1BhZ2VzL0NvdW50IDEvS2lkc1szIDAgUl0+PmVuZG9iaiAzIDAgb2JqPDwvVHlwZS9QYWdlL01lZGlhQm94WzAgMCA1OTUgODQyXS9QYXJlbnQgMiAwIFIvUmVzb3VyY2VzPDw+Pi9Db250ZW50cyA0IDAgUj4+ZW5kb2JqIDQgMCBvYmo8PC9MZW5ndGggMD4+c3RyZWFtCmVuZHN0cmVhbQplbmRvYmoKeHJlZgowIDUKMDAwMDAwMDAwMCA2NTUzNSBmCjAwMDAwMDAwMDkgMDAwMDAgbgowMDAwMDAwMDUyIDAwMDAwIG4KMDAwMDAwMDEwOSAwMDAwMCBuCjAwMDAwMDAyMTMgMDAwMDAgbgp0cmFpbGVyPDwvU2l6ZSA1L1Jvb3QgMSAwIFI+PgpzdGFydHhyZWYKMjY0CiUlRU9GCg=="
+        }
+    ]
+}

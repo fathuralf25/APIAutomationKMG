@@ -17,3 +17,20 @@ API_TOKEN = os.getenv("API_TOKEN") # Fallback if manual token is used
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 TESTING_DOCS_URL = os.getenv("TESTING_DOCS_URL")
+
+# ACS Database
+ACS_DB_HOST = os.getenv("ACS_DB_HOST")
+ACS_DB_PORT = os.getenv("ACS_DB_PORT")
+ACS_DB_NAME = os.getenv("ACS_DB_NAME")
+ACS_DB_USER = os.getenv("ACS_DB_USER")
+ACS_DB_PASSWORD = os.getenv("ACS_DB_PASSWORD")
+# FMS
+BASE_URL_FMS = os.getenv("BASE_URL_FMS")
+USERNAME_FMS = os.getenv("USERNAME_FMS")
+PASSWORD_FMS = os.getenv("PASSWORD_FMS")
+USERNAME_FMS_SBY = os.getenv("USERNAME_FMS_SBY")
+PASSWORD_FMS_SBY = os.getenv("PASSWORD_FMS_SBY")
+
+# Email Credentials
+GMAIL_USERNAME = os.getenv("GMAIL_USERNAME")
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")

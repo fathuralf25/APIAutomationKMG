@@ -250,12 +250,48 @@ def check_polis_in_acs(nomor_polis: str) -> str:
                 page.locator(f"div.z-listcell-content:has-text('{no_nota}')").first.click(timeout=60000)
                 page.wait_for_timeout(3000)
                 
-                # 8. Screenshot FMS
-                logger.info("Step: Capture Screenshot")
-                fms_screenshot = f"evidence/acs/{prefix}fms_jurnal_{nomor_polis.replace('/', '_')}.png"
-                page.screenshot(path=fms_screenshot, full_page=True)
-                logger.info(f"FMS Evidence saved to {fms_screenshot}")
-                paths.append(fms_screenshot)
+                # 8. Screenshot FMS Bagian Atas (Sebelum Scroll)
+                logger.info("Step: Capture Screenshot Atas")
+                fms_screenshot_top = f"evidence/acs/{prefix}fms_jurnal_top_{nomor_polis.replace('/', '_')}.png"
+                
+                try:
+                    # Attempt to take screenshot of the specific modal/window container if it exists
+                    # ZK frameworks often wrap modals in .z-window
+                    window_locator = page.locator(".z-window, .z-window-modal, .z-window-highlighted").first
+                    if window_locator.is_visible():
+                        window_locator.screenshot(path=fms_screenshot_top)
+                    else:
+                        page.screenshot(path=fms_screenshot_top, full_page=True)
+                except Exception:
+                    page.screenshot(path=fms_screenshot_top, full_page=True)
+                    
+                logger.info(f"FMS Evidence Top saved to {fms_screenshot_top}")
+                paths.append(fms_screenshot_top)
+
+                # 9. Ensure Tutup button is in view
+                logger.info("Step: Scroll ke tombol Tutup")
+                try:
+                    tutup_btn = page.locator("button:has-text('Tutup')").first
+                    if tutup_btn.count() > 0:
+                        tutup_btn.scroll_into_view_if_needed()
+                        page.wait_for_timeout(1000)
+                except Exception as e:
+                    pass
+                
+                # 10. Screenshot FMS Bagian Bawah (Setelah Scroll)
+                logger.info("Step: Capture Screenshot Bawah")
+                fms_screenshot_bottom = f"evidence/acs/{prefix}fms_jurnal_bottom_{nomor_polis.replace('/', '_')}.png"
+                
+                try:
+                    if window_locator.is_visible():
+                        window_locator.screenshot(path=fms_screenshot_bottom)
+                    else:
+                        page.screenshot(path=fms_screenshot_bottom, full_page=True)
+                except Exception:
+                    page.screenshot(path=fms_screenshot_bottom, full_page=True)
+                    
+                logger.info(f"FMS Evidence Bottom saved to {fms_screenshot_bottom}")
+                paths.append(fms_screenshot_bottom)
                 
         except Exception as e:
             logger.warning(f"Failed to capture FMS UI: {e}")

@@ -91,6 +91,14 @@ class EvidenceCollector:
             "screenshot_path": screenshot_path
         })
 
+    def add_email_evidence(self, tc_id: str, subject: str, screenshot_path: str):
+        if "email" not in self.evidences[tc_id]:
+            self.evidences[tc_id]["email"] = []
+        self.evidences[tc_id]["email"].append({
+            "subject": subject,
+            "screenshot_path": screenshot_path
+        })
+
     def get_all_evidences(self) -> dict:
         return dict(self.evidences)
 

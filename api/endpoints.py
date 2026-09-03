@@ -4,3 +4,8 @@ OTORISASI = "/akseptasi/loan/otorisasi"
 PAYMENT = "/akseptasi/loan/payment"
 PEMBATALAN = "/akseptasi/draft/canceled"
 KALKULATOR = "/calculate/premi"
+# Restitusi
+RESTITUSI_SUBMIT = "/restitusi/submit"
+RESTITUSI_CONFIRMATION = "/restitusi/confirmation"
+RESTITUSI_DISPUTES = "/restitusi/disputes"
+RESTITUSI_DETAIL = "/restitusi/detail"

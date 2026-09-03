@@ -80,18 +80,24 @@ class ReportGenerator:
             'nomor_transaksi', 'status_akseptasi', 'tanggal_lahir', 
             'tanggal_rencana_realisasi', 'tanggal_akhir_asuransi', 
             'tenor', 'uang_pertanggungan', 'nomor_loan',
-            'ktp', 'id_debitur', 'nilai_pertanggungan', 'nama_debitur', 'Validasi DB', 'Response API', 'Status Code', 'Status Akseptasi',
+            'ktp', 'id_debitur', 'nilai_pertanggungan', 'nama_debitur', 'validasi db', 'response api', 'status code',
             'kode_bank', 'jenis_covering', 'jangka_waktu', 'nomor_rekening_pinjaman', 'nomor_perjanjian_kredit', 'tanggal_mulai_covering', 'premi',
-            'id_sertifikat', 'no_sertifikat', 'tgl_sertifikat', 'url_download_sertifikat', 'is_polis_sent'
+            'id_sertifikat', 'no_sertifikat', 'tgl_sertifikat', 'url_download_sertifikat', 'is_polis_sent',
+            'id_pembayaran', 'nominal_pengajuan_mitra', 'nominal_kalkulasi_askrindo', 'nominal_disetujui', 'nominal_bayar'
         }
         for tc_id, data in evidences_copy.items():
             for db in data.get('db', []):
                 if db.get('result') and isinstance(db['result'], list) and len(db['result']) > 0:
                     if isinstance(db['result'][0], dict):
+                        # Bypass filtering for custom validation tables
+                        is_custom_table = "Validasi Tabel" in str(db.get("query", "")) or "Validasi Response" in str(db.get("query", ""))
                         new_results = []
                         for row in db['result']:
-                            filtered_row = {k: v for k, v in row.items() if str(k).lower() in allowed_cols}
-                            new_results.append(filtered_row if filtered_row else row)
+                            if is_custom_table:
+                                new_results.append(row)
+                            else:
+                                filtered_row = {k: v for k, v in row.items() if str(k).lower() in allowed_cols}
+                                new_results.append(filtered_row if filtered_row else row)
                         db['result'] = new_results
             
             # Tambahkan actual_result agar bisa dipakai di HTML dan DOCX
@@ -454,6 +460,22 @@ class ReportGenerator:
                         
                     step_counter += 1
                 
+                if "email" in data:
+                    p_email = doc.add_paragraph(f"\n[Test_Step_{step_counter}]: Pengecekan Email Notifikasi", style='Heading 3')
+                    p_email.paragraph_format.space_before = Pt(14)
+                    p_email.paragraph_format.space_after = Pt(6)
+                    for email_ev in data["email"]:
+                        subject = email_ev.get("subject", "N/A")
+                        img_path = email_ev.get("screenshot_path", "")
+                        
+                        p_subj = doc.add_paragraph()
+                        p_subj.add_run(f"Subject: {subject}\n").bold = True
+                        try:
+                            doc.add_picture(img_path, width=Inches(5.0))
+                            doc.add_paragraph()
+                        except Exception as e:
+                            doc.add_paragraph(f"[Gagal melampirkan gambar Email: {e}]")
+                    step_counter += 1
                 if "ui" in data:
                     p_ui = doc.add_paragraph(f"\n[Test_Step_{step_counter}]: Pengecekan UI (ACS/FMS)", style='Heading 3')
                     p_ui.paragraph_format.space_before = Pt(14)
@@ -588,6 +610,11 @@ class ReportGenerator:
             wb = load_workbook('collections/test_script.xlsx')
             ws = wb.active
             
+            # Ambil default tester dari baris pertama data di template (row 4) sebagai fallback CI/CD
+            template_tester = ws.cell(row=4, column=13).value
+            if not template_tester:
+                template_tester = "QA Automation"
+            
             # Fill down Stream and Nama Modul BEFORE deleting rows
             last_stream = None
             last_modul = None
@@ -622,7 +649,14 @@ class ReportGenerator:
                             ws.cell(row=row, column=12).value = "1. Response API:\n" + json.dumps(actual_json, indent=2)
                             ws.cell(row=row, column=12).alignment = Alignment(wrap_text=True, vertical="top")
                             
-                    ws.cell(row=row, column=11).value = data.get("status", "Failed")
+                    status_val = data.get("status", "Failed")
+                    status_cell = ws.cell(row=row, column=11)
+                    status_cell.value = status_val
+                    status_cell.alignment = Alignment(vertical="top")
+                    if status_val.lower() == "passed":
+                        status_cell.font = Font(color="008000", bold=True)
+                    else:
+                        status_cell.font = Font(color="FF0000", bold=True)
                     
                     if data.get("test_steps"):
                         ws.cell(row=row, column=8).value = data["test_steps"]
@@ -642,8 +676,17 @@ class ReportGenerator:
                         ws.cell(row=row, column=9).value = test_data_str.strip()
                         ws.cell(row=row, column=9).alignment = Alignment(wrap_text=True, vertical="top")
                         
-                    ws.cell(row=row, column=13).value = "Fathur"
+                    # Prioritas: 1. Argument pytest, 2. Existing di cell, 3. Bawaan template (row 4)
+                    tester_name = os.environ.get("PYTEST_TESTER_NAME")
+                    if not tester_name:
+                        tester_name = ws.cell(row=row, column=13).value
+                    if not tester_name:
+                        tester_name = template_tester
+                        
+                    ws.cell(row=row, column=13).value = tester_name
+                    ws.cell(row=row, column=13).alignment = Alignment(vertical="top")
                     ws.cell(row=row, column=14).value = datetime.now().strftime("%d-%b-%Y")
+                    ws.cell(row=row, column=14).alignment = Alignment(vertical="top")
 
             # Merge Title A1 to N2, center, wrap text, size 20, bold
             # Unmerge any existing ranges to prevent Excel corruption
@@ -689,6 +732,10 @@ class ReportGenerator:
                     cell.border = thin_border
                     if cell.row > 3:
                         cell.alignment = Alignment(wrap_text=True, vertical="top")
+            
+            # Ensure row heights auto-fit the wrapped text
+            for row in range(4, ws.max_row + 1):
+                ws.row_dimensions[row].height = None
 
             # Auto-fit column widths
             for col_idx, col in enumerate(ws.columns, 1):
@@ -808,6 +855,9 @@ class ReportGenerator:
                 if "ui" in data:
                     p.add_run(f"{step_counter}. Pengecekan UI ACS/FMS\n")
                     step_counter += 1
+                if "email" in data:
+                    p.add_run(f"{step_counter}. Pengecekan Email Notifikasi\n")
+                    step_counter += 1
                     
                 p.add_run("\nActual Result:\n").bold = True
                 if data.get("api") and len(data["api"]) > 0:
@@ -852,6 +902,17 @@ class ReportGenerator:
                         except Exception as e:
                             p.add_run(f"[Gagal melampirkan gambar E-Polis: {e}]\n")
                             
+                if "email" in data:
+                    p.add_run(f"\nEmail Notifikasi:\n").bold = True
+                    for email_ev in data["email"]:
+                        subject = email_ev.get("subject", "N/A")
+                        img_path = email_ev.get("screenshot_path", "")
+                        p.add_run(f"Subject: {subject}\n")
+                        try:
+                            p.add_run().add_picture(img_path, width=Inches(4.0))
+                            p.add_run("\n")
+                        except Exception as e:
+                            p.add_run(f"[Gagal melampirkan screenshot Email: {e}]\n")
                 if "ui" in data:
                     for ui_ev in data["ui"]:
                         sys_name = ui_ev.get("system_name", "System")

@@ -63,3 +63,28 @@ LEFT JOIN t_sertifikat cert
     ON s.id_sp2k_submission = cert.id_submission
 WHERE s.nomor_transaksi = %s;
 """
+
+# ==========================================
+# RESTITUSI QUERIES
+# ==========================================
+
+# Query to update payment_status in ACS Staging DB (MSSQL) to mock premium payment
+QUERY_ACS_UPDATE_PREMIUM_PAIDOFF = """
+UPDATE UNDERWRITING.UDW_POLICY 
+SET IS_PREMIUM_PAIDOFF = 1 
+WHERE POLICY_NO = %s;
+"""
+
+# Query to get restitution details from Postgres DB for validation
+QUERY_GET_RESTITUSI = """
+SELECT 
+    a.id_pembayaran,
+    a.nominal_pengajuan_mitra,
+    a.nominal_kalkulasi_askrindo,
+    a.nominal_disetujui,
+    a.nominal_bayar 
+FROM t_pembayaran a
+JOIN t_sp2k_submission b ON a.id_sp2k_submission = b.id_sp2k_submission 
+WHERE b.nomor_transaksi = %s
+AND a.transaction_type = 'REFUND';
+"""

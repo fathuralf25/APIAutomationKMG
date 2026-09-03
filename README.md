@@ -209,6 +209,14 @@ python run_test.py
 pytest tests/test_all_scenarios.py -v
 ```
 
+**Run specific test case directly via pytest (tanpa file runner):**
+
+Anda bisa menjalankan spesifik Test Case (misal TC-45) langsung melalui command line menggunakan flag `-k`.
+
+```bash
+pytest tests/test_all_scenarios.py -k TC-45 -v
+```
+
 **What happens after execution?**
 
 - The framework automatically records the full payloads, API responses, and Database results in memory.

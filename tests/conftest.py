@@ -53,6 +53,14 @@ def base_payloads():
         "pembatalan": load_payload("pembatalan_draft_akseptasi.json")
     }
 
+def pytest_addoption(parser):
+    parser.addoption("--tester", action="store", default=None, help="Name of the tester for reports (useful for CI/CD)")
+
+def pytest_configure(config):
+    tester = config.getoption("--tester")
+    if tester:
+        os.environ["PYTEST_TESTER_NAME"] = tester
+
 def pytest_collection_modifyitems(config, items):
     for item in items:
         # Dynamically add marker for tc_id (e.g., 'TC-1' -> @pytest.mark.TC_1)
@@ -97,7 +105,7 @@ def pytest_sessionstart(session):
 
     # Hapus file report lama dari testing sebelumnya
     old_reports = []
-    for ext in ["*.pdf", "*.docx", "*.xlsx"]:
+    for ext in ["*.pdf", "*.docx", "*.xlsx", "*.html"]:
         old_reports.extend(glob.glob(f"reports/{prefix}Automation_Report_Batch_{ext}"))
         old_reports.extend(glob.glob(f"reports/{prefix}Defect_Report_{ext}"))
     
