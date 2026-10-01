@@ -205,16 +205,23 @@ python run_test.py
 
 **Run via pytest command directly:**
 
+Untuk menjalankan skenario umum (E2E / Excel):
 ```bash
 pytest tests/test_all_scenarios.py -v
 ```
 
+Untuk menjalankan skenario **spesifik Restitusi** (TC-46 s/d TC-59):
+```bash
+pytest tests/test_restitusi.py -v
+```
+
 **Run specific test case directly via pytest (tanpa file runner):**
 
-Anda bisa menjalankan spesifik Test Case (misal TC-45) langsung melalui command line menggunakan flag `-k`.
+Anda bisa menjalankan spesifik Test Case (misal TC-45 atau TC-58) langsung melalui command line menggunakan flag `-k`.
 
 ```bash
-pytest tests/test_all_scenarios.py -k TC-45 -v
+pytest tests/test_all_scenarios.py -k "TC-45" -v
+pytest tests/test_restitusi.py -k "TC-58 or TC-59" -v
 ```
 
 **What happens after execution?**

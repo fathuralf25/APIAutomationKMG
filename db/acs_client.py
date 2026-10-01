@@ -37,3 +37,33 @@ def execute_acs_update(query: str, params: tuple = None) -> int:
     finally:
         if conn:
             conn.close()
+
+import time
+
+def wait_for_policy_in_acs(policy_no: str, max_retries: int = 60, delay_sec: int = 10) -> bool:
+    """
+    Polls the ACS database to wait until the policy is synced.
+    """
+    query = "SELECT COUNT(*) AS cnt FROM UNDERWRITING.UDW_POLICY WHERE POLICY_NO = %s"
+    
+    for i in range(max_retries):
+        conn = None
+        try:
+            conn = get_acs_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(query, (policy_no,))
+            result = cursor.fetchone()
+            if result and result['cnt'] > 0:
+                logger.info(f"Policy {policy_no} found in ACS DB after {i * delay_sec} seconds.")
+                return True
+        except Exception as e:
+            logger.warning(f"Error while polling ACS DB: {e}")
+        finally:
+            if conn:
+                conn.close()
+                
+        logger.info(f"Waiting for Policy {policy_no} to sync to ACS... ({i+1}/{max_retries})")
+        time.sleep(delay_sec)
+        
+    logger.error(f"Timeout: Policy {policy_no} not found in ACS DB after {max_retries * delay_sec} seconds.")
+    return False

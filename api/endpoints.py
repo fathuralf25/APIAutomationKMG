@@ -1,3 +1,5 @@
+from config.config import BASE_URL_RESTITUSI_NOTA
+
 SUBMIT_DRAFT_AKSEPTASI = "/akseptasi/draft/submit"
 INQUIRY_LOAN = "/akseptasi/loan/inquiry"
 OTORISASI = "/akseptasi/loan/otorisasi"
@@ -9,3 +11,4 @@ RESTITUSI_SUBMIT = "/restitusi/submit"
 RESTITUSI_CONFIRMATION = "/restitusi/confirmation"
 RESTITUSI_DISPUTES = "/restitusi/disputes"
 RESTITUSI_DETAIL = "/restitusi/detail"
+RESTITUSI_NOTA = f"{BASE_URL_RESTITUSI_NOTA}/restitusi/nota"

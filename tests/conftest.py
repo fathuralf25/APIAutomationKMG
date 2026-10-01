@@ -72,44 +72,23 @@ def pytest_collection_modifyitems(config, items):
 def pytest_sessionstart(session):
     prefix = ""
 
-    # Hapus images dari testing sebelumnya (tidak menghapus yg baru)
-    old_images = glob.glob(f"reports/{prefix}epolis_*.png")
-    for old in old_images:
-        try:
-            os.remove(old)
-        except Exception:
-            pass
-            
-    # Hapus images ACS dari testing sebelumnya
-    old_acs_images = glob.glob(f"evidence/acs/{prefix}acs_polis_*.png")
-    for old in old_acs_images:
-        try:
-            os.remove(old)
-        except Exception:
-            pass
-            
-    # Hapus images FMS dari testing sebelumnya
-    old_fms_images = glob.glob(f"evidence/acs/{prefix}fms_jurnal_*.png")
-    for old in old_fms_images:
-        try:
-            os.remove(old)
-        except Exception:
-            pass
-            
-    old_acs_debug = glob.glob(f"evidence/acs/{prefix}debug_error*.png")
-    for old in old_acs_debug:
-        try:
-            os.remove(old)
-        except Exception:
-            pass
-
-    # Hapus file report lama dari testing sebelumnya
-    old_reports = []
-    for ext in ["*.pdf", "*.docx", "*.xlsx", "*.html"]:
-        old_reports.extend(glob.glob(f"reports/{prefix}Automation_Report_Batch_{ext}"))
-        old_reports.extend(glob.glob(f"reports/{prefix}Defect_Report_{ext}"))
+    # Comprehensive cleanup of all evidence and report files from previous runs
+    old_files = []
     
-    for old in old_reports:
+    # Reports
+    old_files.extend(glob.glob(f"reports/{prefix}epolis_*.png"))
+    for ext in ["*.pdf", "*.docx", "*.xlsx", "*.html"]:
+        old_files.extend(glob.glob(f"reports/{prefix}Automation_Report_Batch_{ext}"))
+        old_files.extend(glob.glob(f"reports/{prefix}Automation_Report_Batch_*_{ext}"))
+        old_files.extend(glob.glob(f"reports/{prefix}Defect_Report_{ext}"))
+        old_files.extend(glob.glob(f"reports/{prefix}Defect_Report_*_{ext}"))
+        
+    # Evidence directories (ACS, FMS, Emails)
+    for ext in ["*.png", "*.html", "*.txt"]:
+        old_files.extend(glob.glob(f"evidence/*/{prefix}*{ext}"))
+        old_files.extend(glob.glob(f"evidence/*/*/{prefix}*{ext}"))
+        
+    for old in old_files:
         try:
             os.remove(old)
         except Exception:
@@ -121,23 +100,21 @@ def pytest_sessionfinish(session, exitstatus):
     """
     prefix = ""
 
-
     evidences = evidence_collector.get_all_evidences()
     if evidences:
-        
         logger.info(f"Generating new beautiful PDF/HTML, DOCX, and EXCEL reports from pytest executions (Prefix: {prefix})...")
         
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Removed timestamp so reports always overwrite the old ones
         
-        pdf_filename = f"reports/{prefix}Automation_Report_Batch_{timestamp}.pdf"
+        pdf_filename = f"reports/{prefix}Automation_Report_Batch.pdf"
         report_generator.generate_pdf(evidences, pdf_filename)
         
-        docx_filename = f"reports/{prefix}Automation_Report_Batch_{timestamp}.docx"
+        docx_filename = f"reports/{prefix}Automation_Report_Batch.docx"
         report_generator.generate_docx(evidences, docx_filename)
         
-        excel_filename = f"reports/{prefix}Automation_Report_Batch_{timestamp}.xlsx"
+        excel_filename = f"reports/{prefix}Automation_Report_Batch.xlsx"
         report_generator.generate_excel(evidences, excel_filename)
         
-        report_generator.generate_defect_reports(evidences, prefix, timestamp)
+        report_generator.generate_defect_reports(evidences, prefix)
         
         logger.info(f"Reports generated successfully: {pdf_filename}, {docx_filename}, {excel_filename}, and defect reports if any")

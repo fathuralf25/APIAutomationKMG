@@ -55,7 +55,7 @@ class ApiClient:
         response.raise_for_status()
         
         data = response.json()
-        token = data.get("access_token") or data.get("token") or data.get("data", {}).get("token") or data.get("data", {}).get("access_token")
+        token = data.get("access_token") or data.get("accessToken") or data.get("token") or data.get("data", {}).get("token") or data.get("data", {}).get("access_token")
         
         if not token:
             logger.error("Token not found in authentication response")
@@ -83,28 +83,28 @@ class ApiClient:
             logger.debug(f"Response Body: {response.text}")
 
     def get(self, endpoint: str, params: Optional[Dict] = None) -> requests.Response:
-        url = f"{self.base_url}{endpoint}"
+        url = endpoint if endpoint.startswith("http") else f"{self.base_url}{endpoint}"
         logger.info(f"Executing GET {url}")
         response = self.session.get(url, params=params)
         self._log_request_response(response)
         return response
 
     def post(self, endpoint: str, payload: Dict[str, Any]) -> requests.Response:
-        url = f"{self.base_url}{endpoint}"
+        url = endpoint if endpoint.startswith("http") else f"{self.base_url}{endpoint}"
         logger.info(f"Executing POST {url}")
         response = self.session.post(url, json=payload)
         self._log_request_response(response, payload)
         return response
 
     def put(self, endpoint: str, payload: Dict[str, Any]) -> requests.Response:
-        url = f"{self.base_url}{endpoint}"
+        url = endpoint if endpoint.startswith("http") else f"{self.base_url}{endpoint}"
         logger.info(f"Executing PUT {url}")
         response = self.session.put(url, json=payload)
         self._log_request_response(response, payload)
         return response
 
     def delete(self, endpoint: str) -> requests.Response:
-        url = f"{self.base_url}{endpoint}"
+        url = endpoint if endpoint.startswith("http") else f"{self.base_url}{endpoint}"
         logger.info(f"Executing DELETE {url}")
         response = self.session.delete(url)
         self._log_request_response(response)

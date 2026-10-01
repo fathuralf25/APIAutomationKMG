@@ -1,11 +1,18 @@
 from dotenv import load_dotenv
 import os
 
-# Load file .env
-load_dotenv()
+# Cek env apa yang dipilih dari runner
+test_env = os.getenv("TEST_ENV", "staging").lower()
 
+if test_env == "uat":
+    load_dotenv(".env.uat")
+    print(f"--> [INFO] Menggunakan konfigurasi UAT (DB HOST: {os.getenv('DB_HOST')})")
+else:
+    load_dotenv(".env.staging")
+    print(f"--> [INFO] Menggunakan konfigurasi STAGING (DB HOST: {os.getenv('DB_HOST')})")
 # API
 BASE_URL = os.getenv("BASE_URL")
+BASE_URL_RESTITUSI_NOTA = os.getenv("BASE_URL_RESTITUSI_NOTA")
 
 # Database
 DB_HOST = os.getenv("DB_HOST")

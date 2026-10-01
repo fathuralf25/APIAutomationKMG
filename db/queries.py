@@ -88,3 +88,67 @@ JOIN t_sp2k_submission b ON a.id_sp2k_submission = b.id_sp2k_submission
 WHERE b.nomor_transaksi = %s
 AND a.transaction_type = 'REFUND';
 """
+
+# Query for Endorsement Detail Validation (e.g. Cancel / Refund)
+QUERY_GET_SERTIFIKAT_DTL_ENDORSEMENT = """
+SELECT   
+    no_aplikasi,
+    no_rekening, 
+    creation_type,
+    no_sertifikat, 
+    no_sertifikat_prev, 
+    tgl_sertifikat_acs, 
+    nama_pejabat, 
+    nama_jabatan, 
+    no_jurnal
+FROM t_sertifikat_dtl 
+WHERE no_sertifikat_prev = %s
+ORDER BY created_date DESC LIMIT 1;
+"""
+
+# Query for Restitusi Validation (based on nomor_loan)
+QUERY_VALIDASI_PEMBAYARAN_RESTITUSI = """
+SELECT  
+b.nomor_rekening_pinjaman as nomor_loan, 
+c.nominal_pengajuan_mitra as nilai_pengajuan, 
+c.nominal_kalkulasi_askrindo as nilai_hitung_asuransi, 
+c.nominal_disetujui as nilai_disetujui, 
+e.value as status, 
+c.jenis_restitusi as jenis_restitusi, 
+c.transaction_type as transaction_type, 
+c.ket_transaksi as keterangan, 
+c.tanggal_bayar as tanggal_restitusi, 
+d.nama_bank as rekening_bank, 
+d.nomor_rekening as rekening_nomor, 
+d.nama_pemilik as rekening_pemilik, 
+c.remarktransaksi as nomor_reff_pembayaran, 
+c.nominal_bayar as nominal_pembayaran 
+FROM t_sp2k_submission a 
+JOIN t_akseptasi_askred b 
+ON a.id_sp2k_submission = b.id_submission  
+LEFT JOIN t_pembayaran c 
+ON a.id_sp2k_submission = c.id_sp2k_submission  
+JOIN m_payment_account d 
+ON c.id_payment_account = d.id_payment_account 
+JOIN m_lookup e 
+ON (a.status_akseptasi = e.key_only and e.lookup_group = 'STATUS_AKSEPTASI') 
+WHERE b.nomor_rekening_pinjaman = %s 
+AND c.transaction_type = 'REFUND';
+"""
+
+# Query for Jurnal BK Restitusi Validation
+QUERY_CEK_JURNAL_BK_RESTITUSI = """
+SELECT 
+    a.nomor_transaksi,
+    a.status_akseptasi,
+    c.no_jurnal_bk,
+    c.nominal_disetujui,
+    c.nominal_kalkulasi_askrindo,
+    c.nominal_pengajuan_mitra
+FROM t_sp2k_submission a
+JOIN t_pembayaran c 
+    ON a.id_sp2k_submission = c.id_sp2k_submission 
+WHERE 
+    a.nomor_transaksi = %s
+    AND c.transaction_type = 'REFUND';
+"""

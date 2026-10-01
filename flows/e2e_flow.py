@@ -171,7 +171,7 @@ def run_pembatalan_bertahap_flow(tc_id, api_client, db_client, state, base_paylo
     meta["status"] = "Passed"
     evidence_collector.set_test_status(tc_id, meta["status"])
 
-def run_payment_e2e_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta, is_negative_payment=False):
+def run_payment_e2e_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta, is_negative_payment=False, skip_ui_validation=False):
     """
     Executes an E2E flow up to Otorisasi, then executes Payment.
     Useful for TC-10 and TC-11 to ensure a clean loan is used.
@@ -228,7 +228,8 @@ def run_payment_e2e_flow(tc_id, api_client, db_client, state, base_payloads, evi
         if db_result and isinstance(db_result[0], dict):
             no_sertifikat = db_result[0].get("no_sertifikat")
             url_download = db_result[0].get("url_download_sertifikat")
-            validate_polis_ui_and_qr(tc_id, no_sertifikat, url_download, trx, resp_submit.json(), db_result, evidence_collector)
+            if not skip_ui_validation:
+                validate_polis_ui_and_qr(tc_id, no_sertifikat, url_download, trx, resp_submit.json(), db_result, evidence_collector)
             if evidence_collector.evidences[tc_id]["db"]:
                 for row in evidence_collector.evidences[tc_id]["db"][-1]["result"]:
                     if isinstance(row, dict):
@@ -318,16 +319,11 @@ def run_batal_polis_flow(tc_id, api_client, db_client, state, base_payloads, evi
 
 
 def run_multi_fasilitas_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta):
-    """
-    Executes TC-37 to TC-41: Multi Fasilitas Flow.
-    Generates a fresh KTP, publishes a policy with UP 50jt, then tests Submit Draft or Kalkulator.
-    """
     logger.info(f"Executing {tc_id}: Custom Multi Fasilitas Flow")
     
     # 1. Setup Data: Publish a policy with UP 50jt
     setup_tc = "Setup-" + tc_id
     payload_submit = build_dynamic_payload(setup_tc, "a2", state, base_payloads)
-    # Ensure fresh KTP
     fresh_ktp = generate_ktp()
     payload_submit["ktp"] = fresh_ktp
     payload_submit["uang_pertanggungan"] = 50000000
@@ -337,34 +333,38 @@ def run_multi_fasilitas_flow(tc_id, api_client, db_client, state, base_payloads,
         payload_submit["tenor"] = 180
         payload_submit["tanggal_akhir_asuransi"] = calculate_tanggal_akhir_asuransi(payload_submit["tanggal_rencana_realisasi"], 180)
         
-    # Hit Submit
     resp_submit = api_client.post(SUBMIT_DRAFT_AKSEPTASI, payload_submit)
     assert resp_submit.status_code == 200, f"Submit Draft Failed: {resp_submit.text}"
     trx = payload_submit["nomor_transaksi"]
     state["last_success_trx"] = trx
     
-    # Hit Inquiry
     payload_inquiry = build_dynamic_payload(setup_tc, "a4", state, base_payloads)
     payload_inquiry["nomor_transaksi"] = trx
     resp_inquiry = api_client.post(INQUIRY_LOAN, payload_inquiry)
     assert resp_inquiry.status_code == 200, f"Inquiry Failed: {resp_inquiry.text}"
-    
     loan_number = payload_inquiry["nomor_loan"]
     
-    # Hit Otorisasi
     payload_oto = build_dynamic_payload(setup_tc, "a5", state, base_payloads)
     payload_oto["nomor_transaksi"] = trx
     payload_oto["nomor_loan"] = loan_number
     resp_oto = api_client.post(OTORISASI, payload_oto)
     assert resp_oto.status_code == 200, f"Otorisasi Failed: {resp_oto.text}"
     
-    # Hit Payment
     payload_pay = build_dynamic_payload(setup_tc, "a6", state, base_payloads)
     payload_pay["nomor_transaksi"] = trx
     payload_pay["nomor_loan"] = loan_number
     payload_pay["nominal_pembayaran"] = resp_submit.json()["data"]["premi"]
     resp_pay = api_client.post(PAYMENT, payload_pay)
     assert resp_pay.status_code == 200, f"Payment Failed: {resp_pay.text}"
+    
+    # Polling DB to ensure sync
+    import time
+    for i in range(15):
+        check_db = db_client.execute_query("SELECT a.id_submission FROM t_akseptasi_askred a JOIN t_sp2k_submission s ON a.id_submission = s.id_sp2k_submission WHERE s.nomor_transaksi = %s", (trx,))
+        if check_db and len(check_db) > 0:
+            break
+        time.sleep(3)
+    time.sleep(2)
     
     # 2. Execute Main TC
     is_kalkulator = tc_id in ["TC-39", "TC-40"]
@@ -388,34 +388,32 @@ def run_multi_fasilitas_flow(tc_id, api_client, db_client, state, base_payloads,
         
     resp_main = api_client.post(endpoint, main_payload)
     data_main = resp_main.json() if resp_main.content else {}
-    
     evidence_collector.add_api_evidence(tc_id, endpoint, "POST", main_payload, data_main, resp_main.status_code)
     
-    if is_positive:
-        assert resp_main.status_code == 200, f"Expected 200, got {resp_main.status_code}. Response: {data_main}"
-        status_msg = "Passed (<= 500 Juta)"
-        meta["status"] = "Passed"
-    else:
-        assert resp_main.status_code in [400, 422], f"Expected 400/422, got {resp_main.status_code}. Response: {data_main}"
-        status_msg = "Failed (CBC Limit > 500 Juta) - As Expected"
-        meta["status"] = "Passed"
-        
-    evidence_collector.set_test_status(tc_id, meta["status"])
-    
-    # 3. Add Custom Table Akumulasi
-    # Query DB to get the actual outstanding from the first facility
-    db_setup = db_client.execute_query("SELECT a.outstanding, a.nilai_pertanggungan FROM t_akseptasi_askred a JOIN t_sp2k_submission s ON a.id_submission = s.id_sp2k_submission WHERE s.nomor_transaksi = %s", (trx,))
+    # DB Validations BEFORE assert
+    query_db = """
+    SELECT s.nomor_transaksi, a.nilai_pertanggungan, a.outstanding, s.status_akseptasi 
+    FROM t_akseptasi_askred a 
+    JOIN t_sp2k_submission s ON a.id_submission = s.id_sp2k_submission 
+    JOIN m_debitur d ON a.id_debitur = d.id_debitur 
+    WHERE d.ktp = %s AND s.nomor_transaksi != %s
+    ORDER BY s.created_date ASC
+    """
+    db_setup = db_client.execute_query(query_db, (fresh_ktp, main_payload.get("nomor_transaksi", "")))
     
     outstanding_val = 0
     up_val = 0
     if db_setup and len(db_setup) > 0:
         outstanding_val = float(db_setup[0].get("outstanding") or 0)
         up_val = float(db_setup[0].get("nilai_pertanggungan") or 0)
-        # If it reached payment, outstanding should be populated, otherwise it might just be UP
         if outstanding_val == 0:
             outstanding_val = up_val
     else:
-        outstanding_val = 50000000 # fallback
+        outstanding_val = 50000000
+        
+    status_msg = "Passed (<= 500 Juta)" if is_positive else "Overlimit (> 500 Juta)"
+    if not is_positive and resp_main.status_code == 200:
+        status_msg = f"Response API: 200 (Bug)"
         
     table_data = [{
         "Nomor KTP": fresh_ktp,
@@ -435,13 +433,22 @@ def run_multi_fasilitas_flow(tc_id, api_client, db_client, state, base_payloads,
         "result": table_data
     })
     
+    # 3. Assert
+    if is_positive:
+        assert resp_main.status_code == 200, f"Expected 200, got {resp_main.status_code}. Response: {data_main}"
+        meta["status"] = "Passed"
+    else:
+        assert resp_main.status_code in [400, 422], f"Expected 400/422, got {resp_main.status_code}. Response: {data_main}"
+        meta["status"] = "Passed"
+        
+    evidence_collector.set_test_status(tc_id, meta["status"])
+    
     # 4. Continue Full E2E Flow for Positive Draft (TC-37 and TC-41)
     if tc_id in ["TC-37", "TC-41"]:
         logger.info(f"Continuing Full E2E Flow for {tc_id} Multi Fasilitas")
         new_trx = main_payload["nomor_transaksi"]
         state["last_success_trx"] = new_trx
         
-        # Inquiry
         payload_inq_2 = build_dynamic_payload(tc_id, "a4", state, base_payloads)
         payload_inq_2["nomor_transaksi"] = new_trx
         resp_inq_2 = api_client.post(INQUIRY_LOAN, payload_inq_2)
@@ -450,7 +457,6 @@ def run_multi_fasilitas_flow(tc_id, api_client, db_client, state, base_payloads,
         
         loan_number_2 = payload_inq_2["nomor_loan"]
         
-        # Otorisasi
         payload_oto_2 = build_dynamic_payload(tc_id, "a5", state, base_payloads)
         payload_oto_2["nomor_transaksi"] = new_trx
         payload_oto_2["nomor_loan"] = loan_number_2
@@ -458,7 +464,6 @@ def run_multi_fasilitas_flow(tc_id, api_client, db_client, state, base_payloads,
         assert resp_oto_2.status_code == 200, f"Otorisasi Failed: {resp_oto_2.text}"
         evidence_collector.add_api_evidence(tc_id, OTORISASI, "POST", payload_oto_2, resp_oto_2.json(), 200)
         
-        # Payment
         payload_pay_2 = build_dynamic_payload(tc_id, "a6", state, base_payloads)
         payload_pay_2["nomor_transaksi"] = new_trx
         payload_pay_2["nomor_loan"] = loan_number_2
@@ -467,7 +472,6 @@ def run_multi_fasilitas_flow(tc_id, api_client, db_client, state, base_payloads,
         assert resp_pay_2.status_code == 200, f"Payment Failed: {resp_pay_2.text}"
         evidence_collector.add_api_evidence(tc_id, PAYMENT, "POST", payload_pay_2, resp_pay_2.json(), 200)
         
-        # DB & UI Validation
         db_result = validate_terbit_polis(db_client, new_trx, tc_id, evidence_collector)
         if db_result and isinstance(db_result[0], dict):
             no_sertifikat = db_result[0].get("no_sertifikat")
@@ -475,19 +479,370 @@ def run_multi_fasilitas_flow(tc_id, api_client, db_client, state, base_payloads,
             validate_polis_ui_and_qr(tc_id, no_sertifikat, url_download, new_trx, data_main, db_result, evidence_collector)
 
 def run_multi_fasilitas_complex_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta):
-    logger.warning(f"Flow {tc_id} (run_multi_fasilitas_complex_flow) belum diimplementasikan sepenuhnya.")
-    meta["status"] = "Failed"
-    evidence_collector.set_test_status(tc_id, meta["status"])
+    """
+    TC-42: 4 Pengajuan (Submit -> Inquiry). Pengajuan ke-4 ditolak karena overlimit.
+    """
+    logger.info(f"Executing {tc_id}: Multi Fasilitas Complex Flow (Inquiry Only)")
+    fresh_ktp = generate_ktp()
+    
+    def run_cycle(cycle_idx, up_val, outstanding_val):
+        cycle_tc = f"{tc_id}-Cycle{cycle_idx}"
+        payload_submit = build_dynamic_payload(cycle_tc, "a2", state, base_payloads)
+        payload_submit["ktp"] = fresh_ktp
+        payload_submit["uang_pertanggungan"] = up_val
+        
+        resp_submit = api_client.post(SUBMIT_DRAFT_AKSEPTASI, payload_submit)
+        assert resp_submit.status_code == 200, f"Submit {cycle_idx} Failed: {resp_submit.text}"
+        trx = payload_submit["nomor_transaksi"]
+        state["last_success_trx"] = trx
+        evidence_collector.add_api_evidence(tc_id, f"Submit {cycle_idx}", "POST", payload_submit, resp_submit.json(), 200)
+        
+        payload_inquiry = build_dynamic_payload(cycle_tc, "a4", state, base_payloads)
+        payload_inquiry["nomor_transaksi"] = trx
+        payload_inquiry["outstanding"] = outstanding_val
+        
+        resp_inquiry = api_client.post(INQUIRY_LOAN, payload_inquiry)
+        assert resp_inquiry.status_code == 200, f"Inquiry {cycle_idx} Failed: {resp_inquiry.text}"
+        evidence_collector.add_api_evidence(tc_id, f"Inquiry {cycle_idx}", "POST", payload_inquiry, resp_inquiry.json(), 200)
+        
+        import time
+        for i in range(15):
+            check_db = db_client.execute_query("SELECT outstanding FROM t_akseptasi_askred a JOIN t_sp2k_submission s ON a.id_submission = s.id_sp2k_submission WHERE s.nomor_transaksi = %s", (trx,))
+            if check_db and len(check_db) > 0 and check_db[0].get("outstanding") is not None:
+                break
+            time.sleep(3)
+        time.sleep(2)
+        return trx
+        
+    try:
+        trx1 = run_cycle(1, 300000000, 200000000)
+        trx2 = run_cycle(2, 200000000, 200000000)
+        trx3 = run_cycle(3, 100000000, 50000000)
+        
+        payload_submit_4 = build_dynamic_payload(f"{tc_id}-Cycle4", "a2", state, base_payloads)
+        payload_submit_4["ktp"] = fresh_ktp
+        payload_submit_4["uang_pertanggungan"] = 100000000
+        
+        resp_submit_4 = api_client.post(SUBMIT_DRAFT_AKSEPTASI, payload_submit_4)
+        evidence_collector.add_api_evidence(tc_id, "Submit 4 (Overlimit)", "POST", payload_submit_4, resp_submit_4.json() if resp_submit_4.content else {}, resp_submit_4.status_code)
+        
+        query_db = """
+        SELECT s.nomor_transaksi, a.nilai_pertanggungan, a.outstanding, s.status_akseptasi 
+        FROM t_akseptasi_askred a 
+        JOIN t_sp2k_submission s ON a.id_submission = s.id_sp2k_submission 
+        JOIN m_debitur d ON a.id_debitur = d.id_debitur 
+        WHERE d.ktp = %s AND s.nomor_transaksi != %s
+        ORDER BY s.created_date ASC
+        """
+        db_setup1 = db_client.execute_query(query_db, (fresh_ktp, payload_submit_4["nomor_transaksi"]))
+        
+        table_data = []
+        total_out = 0
+        if db_setup1:
+            for idx, row in enumerate(db_setup1):
+                out_val = float(row.get("outstanding") or 0)
+                up_val = float(row.get("nilai_pertanggungan") or 0)
+                total_out += out_val
+                table_data.append({
+                    "Pengajuan": f"Fasilitas {idx+1}",
+                    "TRX": row.get("nomor_transaksi"),
+                    "UP": up_val,
+                    "Outstanding (Diakui)": out_val,
+                    "Status Akseptasi": row.get("status_akseptasi")
+                })
+        
+        table_data.append({
+            "Pengajuan": "Fasilitas 4 (Baru)",
+            "TRX": payload_submit_4["nomor_transaksi"],
+            "UP": 100000000,
+            "Outstanding (Diakui)": "-",
+            "Status Akseptasi": f"Response API: {resp_submit_4.status_code}"
+        })
+        
+        table_data.append({
+            "Pengajuan": "TOTAL AKUMULASI",
+            "TRX": "-",
+            "UP": "-",
+            "Outstanding (Diakui)": total_out + 100000000,
+            "Status Akseptasi": "Overlimit (> 500 Juta)" if (total_out + 100000000) > 500000000 else "Valid"
+        })
+        
+        if tc_id not in evidence_collector.evidences:
+            evidence_collector.evidences[tc_id] = {"api": [], "db": []}
+        if "db" not in evidence_collector.evidences[tc_id]:
+            evidence_collector.evidences[tc_id]["db"] = []
+            
+        evidence_collector.evidences[tc_id]["db"].append({
+            "query": "Validasi Tabel Akumulasi Limit Multi Fasilitas (Inquiry Only)",
+            "result": table_data
+        })
+        
+        assert resp_submit_4.status_code in [400, 422], f"Expected 400/422, got {resp_submit_4.status_code}. Response: {resp_submit_4.text}"
+        
+        meta["status"] = "Passed"
+        evidence_collector.set_test_status(tc_id, meta["status"])
+    except Exception as e:
+        logger.error(f"{tc_id} Failed: {e}")
+        meta["status"] = "Failed"
+        evidence_collector.set_test_status(tc_id, meta["status"])
+        raise e
 
 def run_multi_fasilitas_complex_payment_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta):
-    logger.warning(f"Flow {tc_id} (run_multi_fasilitas_complex_payment_flow) belum diimplementasikan sepenuhnya.")
-    meta["status"] = "Failed"
-    evidence_collector.set_test_status(tc_id, meta["status"])
+    """
+    TC-43: Multi Fasilitas Complex Payment Flow.
+    1 KTP, 4 Pengajuan. Pengajuan 1-3 sukses sampai Payment. Pengajuan 4 ditolak di Submit Draft.
+    """
+    logger.info(f"Executing {tc_id}: Multi Fasilitas Complex Payment Flow")
+    fresh_ktp = generate_ktp()
+    
+    def run_cycle(cycle_idx, up_val, outstanding_val):
+        cycle_tc = f"{tc_id}-Cycle{cycle_idx}"
+        payload_submit = build_dynamic_payload(cycle_tc, "a2", state, base_payloads)
+        payload_submit["ktp"] = fresh_ktp
+        payload_submit["uang_pertanggungan"] = up_val
+        
+        resp_submit = api_client.post(SUBMIT_DRAFT_AKSEPTASI, payload_submit)
+        assert resp_submit.status_code == 200, f"Submit {cycle_idx} Failed: {resp_submit.text}"
+        trx = payload_submit["nomor_transaksi"]
+        state["last_success_trx"] = trx
+        evidence_collector.add_api_evidence(tc_id, f"Submit {cycle_idx}", "POST", payload_submit, resp_submit.json(), 200)
+        
+        payload_inquiry = build_dynamic_payload(cycle_tc, "a4", state, base_payloads)
+        payload_inquiry["nomor_transaksi"] = trx
+        payload_inquiry["outstanding"] = outstanding_val
+        
+        resp_inquiry = api_client.post(INQUIRY_LOAN, payload_inquiry)
+        assert resp_inquiry.status_code == 200, f"Inquiry {cycle_idx} Failed: {resp_inquiry.text}"
+        loan_number = payload_inquiry["nomor_loan"]
+        evidence_collector.add_api_evidence(tc_id, f"Inquiry {cycle_idx}", "POST", payload_inquiry, resp_inquiry.json(), 200)
+        
+        payload_oto = build_dynamic_payload(cycle_tc, "a5", state, base_payloads)
+        payload_oto["nomor_transaksi"] = trx
+        payload_oto["nomor_loan"] = loan_number
+        resp_oto = api_client.post(OTORISASI, payload_oto)
+        assert resp_oto.status_code == 200, f"Otorisasi {cycle_idx} Failed: {resp_oto.text}"
+        evidence_collector.add_api_evidence(tc_id, f"Otorisasi {cycle_idx}", "POST", payload_oto, resp_oto.json(), 200)
+        
+        payload_pay = build_dynamic_payload(cycle_tc, "a6", state, base_payloads)
+        payload_pay["nomor_transaksi"] = trx
+        payload_pay["nomor_loan"] = loan_number
+        payload_pay["nominal_pembayaran"] = resp_submit.json()["data"]["premi"]
+        resp_pay = api_client.post(PAYMENT, payload_pay)
+        assert resp_pay.status_code == 200, f"Payment {cycle_idx} Failed: {resp_pay.text}"
+        evidence_collector.add_api_evidence(tc_id, f"Payment {cycle_idx}", "POST", payload_pay, resp_pay.json(), 200)
+        
+        import time
+        max_retries = 15
+        for i in range(max_retries):
+            check_db = db_client.execute_query("SELECT a.id_submission FROM t_akseptasi_askred a JOIN t_sp2k_submission s ON a.id_submission = s.id_sp2k_submission WHERE s.nomor_transaksi = %s", (trx,))
+            if check_db and len(check_db) > 0:
+                logger.info(f"Data Fasilitas {cycle_idx} ({trx}) sudah tersinkronisasi di DB.")
+                break
+            time.sleep(3)
+        time.sleep(2)
+        return trx
+        
+    try:
+        trx1 = run_cycle(1, 300000000, 200000000)
+        trx2 = run_cycle(2, 200000000, 200000000)
+        trx3 = run_cycle(3, 100000000, 50000000)
+        
+        payload_submit_4 = build_dynamic_payload(f"{tc_id}-Cycle4", "a2", state, base_payloads)
+        payload_submit_4["ktp"] = fresh_ktp
+        payload_submit_4["uang_pertanggungan"] = 100000000
+        
+        resp_submit_4 = api_client.post(SUBMIT_DRAFT_AKSEPTASI, payload_submit_4)
+        evidence_collector.add_api_evidence(tc_id, "Submit 4 (Overlimit)", "POST", payload_submit_4, resp_submit_4.json() if resp_submit_4.content else {}, resp_submit_4.status_code)
+        
+        query_db = """
+        SELECT s.nomor_transaksi, a.nilai_pertanggungan, a.outstanding, s.status_akseptasi 
+        FROM t_akseptasi_askred a 
+        JOIN t_sp2k_submission s ON a.id_submission = s.id_sp2k_submission 
+        JOIN m_debitur d ON a.id_debitur = d.id_debitur 
+        WHERE d.ktp = %s AND s.nomor_transaksi != %s
+        ORDER BY s.created_date ASC
+        """
+        db_setup1 = db_client.execute_query(query_db, (fresh_ktp, payload_submit_4["nomor_transaksi"]))
+        
+        table_data = []
+        total_out = 0
+        if db_setup1:
+            for idx, row in enumerate(db_setup1):
+                out_val = float(row.get("outstanding") or 0)
+                up_val = float(row.get("nilai_pertanggungan") or 0)
+                total_out += out_val
+                table_data.append({
+                    "Pengajuan": f"Fasilitas {idx+1}",
+                    "TRX": row.get("nomor_transaksi"),
+                    "UP": up_val,
+                    "Outstanding (Diakui)": out_val,
+                    "Status Akseptasi": row.get("status_akseptasi")
+                })
+        
+        table_data.append({
+            "Pengajuan": "Fasilitas 4 (Baru)",
+            "TRX": payload_submit_4["nomor_transaksi"],
+            "UP": 100000000,
+            "Outstanding (Diakui)": "-",
+            "Status Akseptasi": f"Response API: {resp_submit_4.status_code}"
+        })
+        
+        table_data.append({
+            "Pengajuan": "TOTAL AKUMULASI",
+            "TRX": "-",
+            "UP": "-",
+            "Outstanding (Diakui)": total_out + 100000000,
+            "Status Akseptasi": "Overlimit (> 500 Juta)" if (total_out + 100000000) > 500000000 else "Valid"
+        })
+        
+        if tc_id not in evidence_collector.evidences:
+            evidence_collector.evidences[tc_id] = {"api": [], "db": []}
+        if "db" not in evidence_collector.evidences[tc_id]:
+            evidence_collector.evidences[tc_id]["db"] = []
+            
+        evidence_collector.evidences[tc_id]["db"].append({
+            "query": "Validasi Tabel Akumulasi Limit Multi Fasilitas (3x Payment)",
+            "result": table_data
+        })
+        
+        assert resp_submit_4.status_code in [400, 422], f"Expected 400/422, got {resp_submit_4.status_code}. Response: {resp_submit_4.text}"
+        
+        meta["status"] = "Passed"
+        evidence_collector.set_test_status(tc_id, meta["status"])
+    except Exception as e:
+        logger.error(f"{tc_id} Failed: {e}")
+        meta["status"] = "Failed"
+        evidence_collector.set_test_status(tc_id, meta["status"])
+        raise e
 
 def run_multi_fasilitas_batal_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta):
-    logger.warning(f"Flow {tc_id} (run_multi_fasilitas_batal_flow) belum diimplementasikan sepenuhnya.")
-    meta["status"] = "Failed"
-    evidence_collector.set_test_status(tc_id, meta["status"])
+    """
+    TC-44: 3 Pengajuan Inquiry. Batal Pengajuan 3. Pengajuan 4. Pengajuan 5 Ditolak.
+    """
+    logger.info(f"Executing {tc_id}: Multi Fasilitas Pembatalan Flow")
+    fresh_ktp = generate_ktp()
+    
+    def run_cycle(cycle_idx, up_val, outstanding_val):
+        cycle_tc = f"{tc_id}-Cycle{cycle_idx}"
+        payload_submit = build_dynamic_payload(cycle_tc, "a2", state, base_payloads)
+        payload_submit["ktp"] = fresh_ktp
+        payload_submit["uang_pertanggungan"] = up_val
+        
+        resp_submit = api_client.post(SUBMIT_DRAFT_AKSEPTASI, payload_submit)
+        assert resp_submit.status_code == 200, f"Submit {cycle_idx} Failed: {resp_submit.text}"
+        trx = payload_submit["nomor_transaksi"]
+        evidence_collector.add_api_evidence(tc_id, f"Submit {cycle_idx}", "POST", payload_submit, resp_submit.json(), 200)
+        
+        payload_inquiry = build_dynamic_payload(cycle_tc, "a4", state, base_payloads)
+        payload_inquiry["nomor_transaksi"] = trx
+        payload_inquiry["outstanding"] = outstanding_val
+        
+        resp_inquiry = api_client.post(INQUIRY_LOAN, payload_inquiry)
+        assert resp_inquiry.status_code == 200, f"Inquiry {cycle_idx} Failed: {resp_inquiry.text}"
+        evidence_collector.add_api_evidence(tc_id, f"Inquiry {cycle_idx}", "POST", payload_inquiry, resp_inquiry.json(), 200)
+        
+        import time
+        for i in range(15):
+            check_db = db_client.execute_query("SELECT outstanding FROM t_akseptasi_askred a JOIN t_sp2k_submission s ON a.id_submission = s.id_sp2k_submission WHERE s.nomor_transaksi = %s", (trx,))
+            if check_db and len(check_db) > 0 and check_db[0].get("outstanding") is not None:
+                break
+            time.sleep(3)
+        time.sleep(2)
+        return trx
+        
+    try:
+        trx1 = run_cycle(1, 300000000, 200000000)
+        trx2 = run_cycle(2, 200000000, 200000000)
+        trx3 = run_cycle(3, 100000000, 50000000)
+        
+        # Batal Pengajuan 3
+        payload_batal = build_dynamic_payload(tc_id, "batal", state, base_payloads)
+        payload_batal["nomor_transaksi"] = trx3
+        resp_batal = api_client.post(PEMBATALAN, payload_batal)
+        assert resp_batal.status_code == 200, f"Batal Failed: {resp_batal.text}"
+        evidence_collector.add_api_evidence(tc_id, "Pembatalan 3", "POST", payload_batal, resp_batal.json(), 200)
+        
+        import time
+        for i in range(15):
+            check_db = db_client.execute_query("SELECT status_akseptasi FROM t_sp2k_submission WHERE nomor_transaksi = %s", (trx3,))
+            if check_db and len(check_db) > 0 and str(check_db[0].get("status_akseptasi")) == '11':
+                break
+            time.sleep(3)
+        time.sleep(2)
+        
+        # Pengajuan 4
+        trx4 = run_cycle(4, 100000000, 100000000)
+        
+        # Pengajuan 5 (Should Fail)
+        payload_submit_5 = build_dynamic_payload(f"{tc_id}-Cycle5", "a2", state, base_payloads)
+        payload_submit_5["ktp"] = fresh_ktp
+        payload_submit_5["uang_pertanggungan"] = 50000000
+        
+        resp_submit_5 = api_client.post(SUBMIT_DRAFT_AKSEPTASI, payload_submit_5)
+        evidence_collector.add_api_evidence(tc_id, "Submit 5 (Overlimit)", "POST", payload_submit_5, resp_submit_5.json() if resp_submit_5.content else {}, resp_submit_5.status_code)
+        
+        query_db = """
+        SELECT s.nomor_transaksi, a.nilai_pertanggungan, a.outstanding, s.status_akseptasi 
+        FROM t_akseptasi_askred a 
+        JOIN t_sp2k_submission s ON a.id_submission = s.id_sp2k_submission 
+        JOIN m_debitur d ON a.id_debitur = d.id_debitur 
+        WHERE d.ktp = %s AND s.nomor_transaksi != %s
+        ORDER BY s.created_date ASC
+        """
+        db_setup1 = db_client.execute_query(query_db, (fresh_ktp, payload_submit_5["nomor_transaksi"]))
+        
+        table_data = []
+        total_out = 0
+        if db_setup1:
+            for idx, row in enumerate(db_setup1):
+                out_val = float(row.get("outstanding") or 0)
+                up_val = float(row.get("nilai_pertanggungan") or 0)
+                # If cancelled (status 11), do not add to total_out
+                if str(row.get("status_akseptasi")) != '11':
+                    total_out += out_val
+                table_data.append({
+                    "Pengajuan": f"Fasilitas {idx+1}",
+                    "TRX": row.get("nomor_transaksi"),
+                    "UP": up_val,
+                    "Outstanding (Diakui)": out_val,
+                    "Status Akseptasi": row.get("status_akseptasi")
+                })
+        
+        table_data.append({
+            "Pengajuan": "Fasilitas 5 (Baru)",
+            "TRX": payload_submit_5["nomor_transaksi"],
+            "UP": 50000000,
+            "Outstanding (Diakui)": "-",
+            "Status Akseptasi": f"Response API: {resp_submit_5.status_code}"
+        })
+        
+        table_data.append({
+            "Pengajuan": "TOTAL AKUMULASI (Aktif)",
+            "TRX": "-",
+            "UP": "-",
+            "Outstanding (Diakui)": total_out + 50000000,
+            "Status Akseptasi": "Overlimit (> 500 Juta)" if (total_out + 50000000) > 500000000 else "Valid"
+        })
+        
+        if tc_id not in evidence_collector.evidences:
+            evidence_collector.evidences[tc_id] = {"api": [], "db": []}
+        if "db" not in evidence_collector.evidences[tc_id]:
+            evidence_collector.evidences[tc_id]["db"] = []
+            
+        evidence_collector.evidences[tc_id]["db"].append({
+            "query": "Validasi Tabel Akumulasi Limit (Dengan Pembatalan)",
+            "result": table_data
+        })
+        
+        assert resp_submit_5.status_code in [400, 422], f"Expected 400/422, got {resp_submit_5.status_code}. Response: {resp_submit_5.text}"
+        
+        meta["status"] = "Passed"
+        evidence_collector.set_test_status(tc_id, meta["status"])
+    except Exception as e:
+        logger.error(f"{tc_id} Failed: {e}")
+        meta["status"] = "Failed"
+        evidence_collector.set_test_status(tc_id, meta["status"])
+        raise e
 
 def run_multi_fasilitas_akumulasi_response_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta):
     logger.warning(f"Flow {tc_id} (run_multi_fasilitas_akumulasi_response_flow) belum diimplementasikan sepenuhnya.")

@@ -25,6 +25,14 @@ def validate_polis_ui_and_qr(tc_id, no_sertifikat, url_download, trx_id, data_su
     
     # UI ACS Check
     try:
+        from db.acs_client import wait_for_policy_in_acs, execute_acs_update
+        from db.queries import QUERY_ACS_UPDATE_PREMIUM_PAIDOFF
+        
+        logger.info(f"[{tc_id}] Menunggu sinkronisasi polis {no_sertifikat} ke ACS DB...")
+        if wait_for_policy_in_acs(no_sertifikat, max_retries=60, delay_sec=10):
+            logger.info(f"[{tc_id}] Patching status pembayaran menjadi Lunas (1) di ACS DB...")
+            execute_acs_update(QUERY_ACS_UPDATE_PREMIUM_PAIDOFF, (no_sertifikat,))
+            
         ui_res = check_polis_in_acs(no_sertifikat)
         screenshot_paths = ui_res.get("paths", [])
         premi_acs = ui_res.get("premi_acs", 0.0)

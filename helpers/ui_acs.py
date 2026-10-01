@@ -66,20 +66,42 @@ def check_polis_in_acs(nomor_polis: str) -> str:
             inquiry.wait_for(timeout=30000)
             inquiry.click()
             
-            # Search Box
+            # Search Box with Retry Mechanism
             # In the Inquiry page, the search box might not have a placeholder or type='search'
             # We target the first visible text/search input
             search_box = page.locator("input[type='text'], input[type='search']").first
             search_box.wait_for(timeout=30000)
-            search_box.fill(nomor_polis)
-            page.keyboard.press("Enter")
             
-            # Wait for data to load
-            page.wait_for_timeout(3000)
+            max_search_retries = 10
+            retry_delay_ms = 10000 # 10 detik
+            data_found = False
+            row_element = None
+            
+            for attempt in range(max_search_retries):
+                logger.info(f"Mencoba mencari polis {nomor_polis} di UI ACS (Percobaan {attempt + 1}/{max_search_retries})...")
+                search_box.fill("")
+                page.wait_for_timeout(500)
+                search_box.fill(nomor_polis)
+                page.keyboard.press("Enter")
+                
+                # Wait for data to load
+                page.wait_for_timeout(3000)
+                
+                # Check if row appears
+                try:
+                    row_element = page.get_by_text(nomor_polis, exact=False).first
+                    row_element.wait_for(timeout=5000)
+                    data_found = True
+                    logger.info(f"Data polis {nomor_polis} ditemukan di UI ACS!")
+                    break
+                except Exception:
+                    logger.warning(f"Data belum muncul di UI. Menunggu {int(retry_delay_ms/1000)} detik sebelum mencoba lagi...")
+                    page.wait_for_timeout(retry_delay_ms)
+                    
+            if not data_found:
+                raise Exception(f"Data polis {nomor_polis} tidak ditemukan di Inquiry ACS setelah {max_search_retries} kali percobaan pencarian.")
             
             # Click the row
-            row_element = page.get_by_text(nomor_polis, exact=False).first
-            row_element.wait_for(timeout=120000)
             row_element.click()
             
             # Give some time for the modal/details to fully render
@@ -184,10 +206,35 @@ def check_polis_in_acs(nomor_polis: str) -> str:
                 page.locator("i.z-icon-usd").first.click(timeout=300000)
                 page.wait_for_timeout(2000)
                 
+                # 3.1 Handle 'Ganti Password' popup
+                try:
+                    logger.info("Checking for 'Ganti Password' popup in FMS...")
+                    page.wait_for_selector(".z-modal-mask, span.z-label:has-text('Ganti Password')", timeout=10000, state="visible")
+                    logger.info("Popup detected. Pressing Escape...")
+                    page.wait_for_timeout(1000)
+                    page.locator("body").press("Escape")
+                    try:
+                        yes_btn = page.locator("button.z-messagebox-button:visible", has_text="Yes").last
+                        if yes_btn.count() == 0:
+                            yes_btn = page.locator("button:visible", has_text="Yes").last
+                        yes_btn.wait_for(timeout=5000, state="visible")
+                        logger.info("Clicking 'Yes' on confirmation popup...")
+                        yes_btn.click(force=True)
+                        page.wait_for_timeout(2000)
+                    except Exception as ex:
+                        logger.warning(f"Tombol Yes tidak ditemukan setelah menekan Escape: {ex}")
+                except Exception as e:
+                    logger.info(f"No Ganti Password popup found. Continuing...")
+                
+                try:
+                    page.wait_for_selector(".z-modal-mask", state="hidden", timeout=5000)
+                except:
+                    pass
+                
                 logger.info("Step: Klik Finance & Accounting")
                 finance_acc = page.locator("a:has(span:has-text('Finance & Accounting'))").first
                 finance_acc.wait_for(state="visible", timeout=300000)
-                finance_acc.click(timeout=30000)
+                finance_acc.click(timeout=30000, force=True)
                 page.wait_for_timeout(1000)
                 
                 logger.info("Step: Klik Jurnal Umum")
@@ -298,3 +345,10 @@ def check_polis_in_acs(nomor_polis: str) -> str:
             
         browser.close()
         return {"paths": paths, "premi_acs": extracted_premi_acs}
+
+def check_sor_in_acs(nomor_polis: str) -> dict:
+    """
+    Placeholder for checking SOR in ACS UI.
+    """
+    logger.info(f"Checking SOR in ACS for polis {nomor_polis} (stub/placeholder)")
+    return {"paths": []}

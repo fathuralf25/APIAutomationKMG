@@ -156,7 +156,7 @@
         {% for ui_ev in data.ui %}
         <div style="margin-top:10px;">
             <strong>System: {{ ui_ev.system_name }}</strong><br>
-            <img src="file:///{{ ui_ev.screenshot_path }}" alt="{{ ui_ev.system_name }}" style="max-width: 100%; border: 1px solid #ccc;">
+            <img src="file:///{{ ui_ev.screenshot_path }}" alt="{{ ui_ev.system_name }}" style="max-width: 80%; max-height: 400px; object-fit: contain; border: 1px solid #ccc;">
         </div>
         {% endfor %}
         {% set step_counter = step_counter + 1 %}

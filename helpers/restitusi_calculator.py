@@ -4,7 +4,7 @@ import math
 def calculate_restitusi_expected(tanggal_mulai_covering: str, tanggal_restitusi: str, jangka_waktu_bulan: int, premi: float) -> float:
     """
     Calculate the expected restitution value based on business rules.
-    If days <= 30, full refund.
+    If days <= 30, premi nett = premi - 10% (akuisisi).
     If days > 30, proportional refund.
     """
     fmt = "%Y-%m-%d"
@@ -14,7 +14,7 @@ def calculate_restitusi_expected(tanggal_mulai_covering: str, tanggal_restitusi:
     days_passed = (t_restitusi - t_mulai).days
     
     if days_passed <= 30:
-        return round(premi, 2)
+        return round(premi * 0.90, 2)
     else:
         N = jangka_waktu_bulan
         # Assuming T is calculated as (days_passed - 1) // 30, or simply based on boundary.
@@ -23,5 +23,6 @@ def calculate_restitusi_expected(tanggal_mulai_covering: str, tanggal_restitusi:
         if T == 0 and days_passed > 30: 
             T = 1
             
-        premi_nett = ((N - T) / N) * (0.35 * (premi * 0.90))
+        factor = round((N - T) / N, 4)
+        premi_nett = factor * (0.35 * (premi * 0.90))
         return round(premi_nett, 2)

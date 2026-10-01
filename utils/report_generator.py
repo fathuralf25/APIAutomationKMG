@@ -83,7 +83,8 @@ class ReportGenerator:
             'ktp', 'id_debitur', 'nilai_pertanggungan', 'nama_debitur', 'validasi db', 'response api', 'status code',
             'kode_bank', 'jenis_covering', 'jangka_waktu', 'nomor_rekening_pinjaman', 'nomor_perjanjian_kredit', 'tanggal_mulai_covering', 'premi',
             'id_sertifikat', 'no_sertifikat', 'tgl_sertifikat', 'url_download_sertifikat', 'is_polis_sent',
-            'id_pembayaran', 'nominal_pengajuan_mitra', 'nominal_kalkulasi_askrindo', 'nominal_disetujui', 'nominal_bayar'
+            'id_pembayaran', 'nominal_pengajuan_mitra', 'nominal_kalkulasi_askrindo', 'nominal_disetujui', 'nominal_bayar',
+            'no_aplikasi', 'no_rekening', 'creation_type', 'no_sertifikat_prev', 'tgl_sertifikat_acs', 'nama_pejabat', 'nama_jabatan', 'no_jurnal'
         }
         for tc_id, data in evidences_copy.items():
             for db in data.get('db', []):
@@ -101,9 +102,19 @@ class ReportGenerator:
                         db['result'] = new_results
             
             # Tambahkan actual_result agar bisa dipakai di HTML dan DOCX
+            actual_result_text = ""
             actual_json = {}
             if data.get("api") and len(data["api"]) > 0:
-                actual_json = data["api"][-1].get("response_json", {})
+                # Find the last API hit that is NOT the nota/bukti bayar
+                for api_evidence in reversed(data["api"]):
+                    url_str = str(api_evidence.get("url", "")).lower()
+                    method_str = str(api_evidence.get("method", "")).lower()
+                    if "nota" not in url_str and "bukti bayar" not in url_str and "nota" not in method_str:
+                        actual_json = api_evidence.get("response_json", {})
+                        break
+                if not actual_json:
+                    actual_json = data["api"][-1].get("response_json", {})
+            
             if actual_json:
                 expected = data.get("expected_result", "")
                 status = data.get("status", "").lower()
@@ -115,9 +126,17 @@ class ReportGenerator:
                     if status != "failed":
                         db_msg = "\n\n2. data DB sesuai dengan request postman"
                 
-                data["actual_result"] = "1. Response API:\n" + json.dumps(actual_json, indent=2) + db_msg
-            else:
-                data["actual_result"] = ""
+                actual_result_text = "1. Response API:\n" + json.dumps(actual_json, indent=2) + db_msg
+            
+            if "ui" in data:
+                ui_msg = "\nHasil Screenshot UI:\n"
+                for ui_ev in data["ui"]:
+                    sys_name = ui_ev.get("system_name", "")
+                    ss_path = ui_ev.get("screenshot_path", "")
+                    ui_msg += f"- {sys_name}: {ss_path}\n"
+                actual_result_text = (actual_result_text + ui_msg) if actual_result_text else ui_msg.strip()
+                
+            data["actual_result"] = actual_result_text.strip()
 
         return evidences_copy
 
@@ -140,11 +159,13 @@ class ReportGenerator:
         html_file = output_file.replace(".pdf", ".html")
         self.generate_html(evidences, html_file)
         
+        if not HAS_WEASYPRINT:
+            print("WeasyPrint is not installed. Skipping PDF generation, HTML saved instead.")
+            return
+
         try:
             HTML(html_file).write_pdf(output_file)
             print(f"PDF generated successfully: {output_file}")
-        except ImportError:
-            print("WeasyPrint is not installed. Skipping PDF generation, HTML saved instead.")
         except Exception as e:
             print(f"Failed to generate PDF: {e}")
 
@@ -330,7 +351,7 @@ class ReportGenerator:
                 
                 test_data_str = ""
                 for api in data.get("api", []):
-                    payload = api.get("request_payload", {})
+                    payload = api.get("request_payload") or {}
                     if "nomor_transaksi" in payload and f"nomor_transaksi: {payload['nomor_transaksi']}" not in test_data_str:
                         test_data_str += f"nomor_transaksi: {payload['nomor_transaksi']}\n"
                     if "nomor_loan" in payload and f"nomor_loan: {payload['nomor_loan']}" not in test_data_str:
@@ -339,7 +360,7 @@ class ReportGenerator:
                         test_data_str += f"ktp: {payload['ktp']}\n"
                 
                 if not test_data_str and data.get("api"):
-                    payload = data["api"][0].get("request_payload", {})
+                    payload = data["api"][0].get("request_payload") or {}
                     if payload:
                         test_data_str = json.dumps(payload, indent=2)
 
@@ -488,7 +509,12 @@ class ReportGenerator:
                         p_sys.add_run(f"System: {sys_name}\n").bold = True
                     
                         try:
-                            doc.add_picture(img_path, width=Inches(6.0))
+                            if "ACS" in sys_name.upper():
+                                doc.add_picture(img_path, width=Inches(4.5))
+                            elif "Bukti Bayar" in sys_name:
+                                doc.add_picture(img_path, width=Inches(3.5)) # Prevent explicit page breaks before/after due to height overflow
+                            else:
+                                doc.add_picture(img_path, width=Inches(5.0))
                             doc.add_paragraph()
                         except Exception as e:
                             doc.add_paragraph(f"[Gagal melampirkan screenshot {sys_name}: {e}]")
@@ -626,13 +652,13 @@ class ReportGenerator:
                 if modul_val: last_modul = modul_val
                 elif last_modul: ws.cell(row=row, column=3).value = last_modul
 
-            # Hapus row yang tidak dieksekusi (dijalankan dari bawah ke atas agar index tidak bergeser)
-            for row in range(ws.max_row, 3, -1):
-                tc_id = ws.cell(row=row, column=4).value
-                if not tc_id or not isinstance(tc_id, str) or not tc_id.startswith("TC-"):
-                    continue
-                if tc_id not in evidences:
-                    ws.delete_rows(row, 1)
+            # JANGAN hapus row yang tidak dieksekusi agar existing test cases tetap ada
+            # for row in range(ws.max_row, 3, -1):
+            #     tc_id = ws.cell(row=row, column=4).value
+            #     if not tc_id or not isinstance(tc_id, str) or not tc_id.startswith("TC-"):
+            #         continue
+            #     if tc_id not in evidences:
+            #         ws.delete_rows(row, 1)
 
             # Update sisa row yang dieksekusi
             for row in range(4, ws.max_row + 1):
@@ -643,11 +669,31 @@ class ReportGenerator:
                 if tc_id in evidences:
                     data = evidences[tc_id]
                     
+                    actual_result_text = ""
                     if data.get("api") and len(data["api"]) > 0:
-                        actual_json = data["api"][-1].get("response_json", {})
+                        actual_json = {}
+                        for api_evidence in reversed(data["api"]):
+                            url_str = str(api_evidence.get("url", "")).lower()
+                            method_str = str(api_evidence.get("method", "")).lower()
+                            if "nota" not in url_str and "bukti bayar" not in url_str and "nota" not in method_str:
+                                actual_json = api_evidence.get("response_json", {})
+                                break
+                        if not actual_json:
+                            actual_json = data["api"][-1].get("response_json", {})
                         if actual_json:
-                            ws.cell(row=row, column=12).value = "1. Response API:\n" + json.dumps(actual_json, indent=2)
-                            ws.cell(row=row, column=12).alignment = Alignment(wrap_text=True, vertical="top")
+                            actual_result_text += "1. Response API:\n" + json.dumps(actual_json, indent=2) + "\n\n"
+                            
+                    if "ui" in data:
+                        actual_result_text += "Hasil Screenshot UI:\n"
+                        for ui_ev in data["ui"]:
+                            sys_name = ui_ev.get("system_name", "")
+                            ss_path = ui_ev.get("screenshot_path", "")
+                            # Use absolute path for clarity or keep it as is
+                            actual_result_text += f"- {sys_name}: {ss_path}\n"
+                            
+                    if actual_result_text:
+                        ws.cell(row=row, column=12).value = actual_result_text.strip()
+                        ws.cell(row=row, column=12).alignment = Alignment(wrap_text=True, vertical="top")
                             
                     status_val = data.get("status", "Failed")
                     status_cell = ws.cell(row=row, column=11)
@@ -665,7 +711,7 @@ class ReportGenerator:
                     
                     test_data_str = ""
                     for api in data.get("api", []):
-                        payload = api.get("request_payload", {})
+                        payload = api.get("request_payload") or {}
                         if "nomor_transaksi" in payload and f"nomor_transaksi: {payload['nomor_transaksi']}" not in test_data_str:
                             test_data_str += f"nomor_transaksi: {payload['nomor_transaksi']}\n"
                         if "nomor_loan" in payload and f"nomor_loan: {payload['nomor_loan']}" not in test_data_str:
@@ -686,8 +732,95 @@ class ReportGenerator:
                     ws.cell(row=row, column=13).value = tester_name
                     ws.cell(row=row, column=13).alignment = Alignment(vertical="top")
                     ws.cell(row=row, column=14).value = datetime.now().strftime("%d-%b-%Y")
+                    ws.cell(row=row, column=14).value = datetime.now().strftime("%d-%b-%Y")
                     ws.cell(row=row, column=14).alignment = Alignment(vertical="top")
 
+            # APPEND NEW TCs THAT ARE NOT IN THE TEMPLATE
+            existing_tcs = [ws.cell(row=r, column=4).value for r in range(4, ws.max_row + 1)]
+            for tc_id, data in evidences.items():
+                if tc_id not in existing_tcs:
+                    new_row = ws.max_row + 1
+                    
+                    # Kolom 1: No (Hitung otomatis berdasarkan baris sebelumnya)
+                    last_no = ws.cell(row=new_row-1, column=1).value
+                    ws.cell(row=new_row, column=1).value = (last_no + 1) if isinstance(last_no, int) else 1
+                    
+                    # Kolom 2: Stream
+                    ws.cell(row=new_row, column=2).value = "Restitusi"
+                    # Kolom 3: Nama Modul
+                    ws.cell(row=new_row, column=3).value = "API - Restitusi"
+                    # Kolom 4: TC ID
+                    ws.cell(row=new_row, column=4).value = tc_id
+                    # Kolom 5: Skenario / TC Name
+                    ws.cell(row=new_row, column=5).value = data.get("tc_name", tc_id)
+                    # Kolom 6: Jenis Test
+                    ws.cell(row=new_row, column=6).value = "Negative" if ("gagal" in data.get("tc_name", "").lower() or "ditolak" in data.get("tc_name", "").lower() or "fiktif" in data.get("tc_name", "").lower() or "> nilai premi" in data.get("tc_name", "").lower()) else "Positive"
+                    # Kolom 7: Pre Condition
+                    ws.cell(row=new_row, column=7).value = data.get("precondition", "-")
+                    # Kolom 8: Test Steps
+                    ws.cell(row=new_row, column=8).value = data.get("test_steps", "-")
+                    
+                    # Kolom 9: Test Data
+                    test_data_str = ""
+                    for api in data.get("api", []):
+                        payload = api.get("request_payload") or {}
+                        if "nomor_transaksi" in payload and f"nomor_transaksi: {payload['nomor_transaksi']}" not in test_data_str:
+                            test_data_str += f"nomor_transaksi: {payload['nomor_transaksi']}\n"
+                        if "nomor_loan" in payload and f"nomor_loan: {payload['nomor_loan']}" not in test_data_str:
+                            test_data_str += f"nomor_loan: {payload['nomor_loan']}\n"
+                        if "ktp" in payload and f"ktp: {payload['ktp']}" not in test_data_str:
+                            test_data_str += f"ktp: {payload['ktp']}\n"
+                    if "custom_test_data" in data:
+                        test_data_str += f"\n{data['custom_test_data']}"
+                    ws.cell(row=new_row, column=9).value = test_data_str.strip() if test_data_str else "-"
+                    
+                    # Kolom 10: Expected Result
+                    ws.cell(row=new_row, column=10).value = data.get("expected_result", "-")
+                    
+                    # Kolom 11: Status
+                    status_val = data.get("status", "Failed")
+                    status_cell = ws.cell(row=new_row, column=11)
+                    status_cell.value = status_val
+                    if status_val.lower() == "passed":
+                        status_cell.font = Font(color="008000", bold=True)
+                    else:
+                        status_cell.font = Font(color="FF0000", bold=True)
+                        
+                    # Kolom 12: Actual Result / Notes
+                    actual_result_text = ""
+                    if data.get("api") and len(data["api"]) > 0:
+                        actual_json = {}
+                        for api_evidence in reversed(data["api"]):
+                            url_str = str(api_evidence.get("url", "")).lower()
+                            method_str = str(api_evidence.get("method", "")).lower()
+                            if "nota" not in url_str and "bukti bayar" not in url_str and "nota" not in method_str:
+                                actual_json = api_evidence.get("response_json", {})
+                                break
+                        if not actual_json:
+                            actual_json = data["api"][-1].get("response_json", {})
+                        if actual_json:
+                            actual_result_text += "1. Response API:\n" + json.dumps(actual_json, indent=2) + "\n\n"
+                    
+                    if "ui" in data:
+                        actual_result_text += "Hasil Screenshot UI:\n"
+                        for ui_ev in data["ui"]:
+                            sys_name = ui_ev.get("system_name", "")
+                            ss_path = ui_ev.get("screenshot_path", "")
+                            actual_result_text += f"- {sys_name}: {ss_path}\n"
+                    
+                    if actual_result_text:
+                        ws.cell(row=new_row, column=12).value = actual_result_text.strip()
+                    
+                    # Kolom 13: Tester
+                    tester_name = os.environ.get("PYTEST_TESTER_NAME") or template_tester
+                    ws.cell(row=new_row, column=13).value = tester_name
+                    
+                    # Kolom 14: Date (Format DD/MM/YYYY)
+                    ws.cell(row=new_row, column=14).value = datetime.now().strftime("%d/%m/%Y")
+                    
+                    for col in range(1, 15):
+                        ws.cell(row=new_row, column=col).alignment = Alignment(wrap_text=True, vertical="top")
+                        
             # Merge Title A1 to N2, center, wrap text, size 20, bold
             # Unmerge any existing ranges to prevent Excel corruption
             for range_str in list(ws.merged_cells.ranges):

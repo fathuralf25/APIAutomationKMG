@@ -86,6 +86,12 @@ def download_and_scan_policy_qr(policy_no: str, db_url: str = None, trx_no: str 
         # Check if the QR result is a URL. If so, capture its screenshot
         for qr in qr_results:
             if qr.startswith("http://") or qr.startswith("https://"):
+                if "validate?noPolis=" in qr:
+                    import urllib.parse
+                    parsed_qr = urllib.parse.urlparse(qr)
+                    new_base = os.environ.get("QR_VALIDATION_BASE_URL", "http://10.100.20.131:5001").rstrip("/")
+                    qr = f"{new_base}/validate?{parsed_qr.query}"
+                    
                 try:
                     from playwright.sync_api import sync_playwright
                     with sync_playwright() as p:

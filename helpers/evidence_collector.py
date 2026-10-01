@@ -36,26 +36,27 @@ class EvidenceCollector:
     def set_test_status(self, tc_id: str, status: str):
         self.evidences[tc_id]["status"] = status
         
-        # Use custom test data if provided by the test case
+        # Build test data string from all payloads sent in this test case
+        test_data_str = ""
+        for api in self.evidences[tc_id].get("api", []):
+            payload = api.get("request_payload") or {}
+            if payload:
+                # Add important fields as a summary
+                if "nomor_transaksi" in payload and f"nomor_transaksi: {payload['nomor_transaksi']}" not in test_data_str:
+                    test_data_str += f"nomor_transaksi: {payload['nomor_transaksi']}\n"
+                if "nomor_loan" in payload and f"nomor_loan: {payload['nomor_loan']}" not in test_data_str:
+                    test_data_str += f"nomor_loan: {payload['nomor_loan']}\n"
+                if "ktp" in payload and f"ktp: {payload['ktp']}" not in test_data_str:
+                    test_data_str += f"ktp: {payload['ktp']}\n"
+        
+        # Use custom test data if provided by the test case (append it)
         if self.evidences[tc_id].get("custom_test_data"):
-            test_data_str = self.evidences[tc_id]["custom_test_data"]
-        else:
-            # Build test data string from all payloads sent in this test case
-            test_data_str = ""
-            for api in self.evidences[tc_id].get("api", []):
-                payload = api.get("request_payload", {})
-                if payload:
-                    # Add important fields as a summary
-                    if "nomor_transaksi" in payload and f"nomor_transaksi: {payload['nomor_transaksi']}" not in test_data_str:
-                        test_data_str += f"nomor_transaksi: {payload['nomor_transaksi']}\n"
-                    if "nomor_loan" in payload and f"nomor_loan: {payload['nomor_loan']}" not in test_data_str:
-                        test_data_str += f"nomor_loan: {payload['nomor_loan']}\n"
-                    if "ktp" in payload and f"ktp: {payload['ktp']}" not in test_data_str:
-                        test_data_str += f"ktp: {payload['ktp']}\n"
+            test_data_str += "\n" + self.evidences[tc_id]["custom_test_data"]
+            test_data_str = test_data_str.strip()
         
         # fallback to full json if summary is empty but there's a payload
         if not test_data_str and self.evidences[tc_id].get("api"):
-            payload = self.evidences[tc_id]["api"][0].get("request_payload", {})
+            payload = self.evidences[tc_id]["api"][0].get("request_payload") or {}
             if payload:
                 test_data_str = json.dumps(payload, indent=2)
                 
@@ -86,6 +87,14 @@ class EvidenceCollector:
     def add_ui_evidence(self, tc_id: str, system_name: str, screenshot_path: str):
         if "ui" not in self.evidences[tc_id]:
             self.evidences[tc_id]["ui"] = []
+            
+            # Add as a test step if not already present
+            current_steps = self.evidences[tc_id].get("test_steps", "")
+            if "Pengecekan UI" not in current_steps and current_steps:
+                lines = current_steps.strip().split('\n')
+                next_num = len(lines) + 1
+                self.evidences[tc_id]["test_steps"] = current_steps.strip() + f"\n{next_num}. Pengecekan UI (Screenshot terlampir)."
+        
         self.evidences[tc_id]["ui"].append({
             "system_name": system_name,
             "screenshot_path": screenshot_path
