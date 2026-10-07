@@ -268,7 +268,7 @@ def create_jurnal_bbk_restitusi(nomor_polis: str, tc_id: str, evidence_collector
             # 10. Check checkbox for exact policy with Polling
             logger.info(f"Selecting policy checkbox for {nomor_polis} (with polling)")
             
-            max_cari_retries = 15
+            max_cari_retries = 10
             endorsement_found = False
             
             for attempt in range(max_cari_retries):
@@ -294,7 +294,7 @@ def create_jurnal_bbk_restitusi(nomor_polis: str, tc_id: str, evidence_collector
                         logger.warning(f"Baris ditemukan tapi belum stabil: {e}")
                 
                 logger.info(f"Percobaan {attempt + 1}/{max_cari_retries}: Data belum muncul secara utuh, menunggu sebelum mencari lagi...")
-                time.sleep(6)
+                time.sleep(3)
             
             if endorsement_found:
                 logger.info("Mengeklik checkbox data dan tombol Pilih...")

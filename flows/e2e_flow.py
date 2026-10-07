@@ -848,3 +848,83 @@ def run_multi_fasilitas_akumulasi_response_flow(tc_id, api_client, db_client, st
     logger.warning(f"Flow {tc_id} (run_multi_fasilitas_akumulasi_response_flow) belum diimplementasikan sepenuhnya.")
     meta["status"] = "Failed"
     evidence_collector.set_test_status(tc_id, meta["status"])
+
+def run_blacklist_debitur_flow(tc_id, api_client, db_client, evidence_collector, meta, base_payloads):
+    logger.info(f"[{tc_id}] Executing Blacklist Debitur Flow")
+    from db.acs_client import execute_acs_query, execute_acs_update
+    from db.queries import QUERY_GET_BLACKLISTED_KTP, QUERY_ACS_UPDATE_BLACKLIST, QUERY_CANCEL_ACTIVE_SUBMISSIONS
+    import time
+    
+    # 1. Get blacklisted NIK
+    logger.info(f"[{tc_id}] Fetching blacklisted NIK from ACS DB...")
+    res = execute_acs_query(QUERY_GET_BLACKLISTED_KTP)
+    if not res:
+        logger.error("No blacklisted NIK found in ACS DB.")
+        raise AssertionError("Precondition failed: No blacklisted NIK found in DB.")
+    
+    blacklisted_nik = str(res[0]['ID_NO'])
+    logger.info(f"[{tc_id}] Found blacklisted NIK: {blacklisted_nik}")
+    
+    # 1.5 Cleanup DB & Patch
+    logger.info(f"[{tc_id}] Membatalkan seluruh pengajuan aktif untuk KTP {blacklisted_nik} di PostgreSQL...")
+    db_client.execute_update(QUERY_CANCEL_ACTIVE_SUBMISSIONS, (blacklisted_nik,))
+    logger.info(f"[{tc_id}] Patching IS_BLACKLIST = 1 di ACS Staging untuk KTP {blacklisted_nik}...")
+    execute_acs_update(QUERY_ACS_UPDATE_BLACKLIST, (1, blacklisted_nik))
+    time.sleep(2)
+    
+    # 2. Build payload
+    from helpers.payload_factory import build_dynamic_payload
+    state = {"master_ktp": blacklisted_nik}
+    payload = build_dynamic_payload(tc_id, "a2", state, base_payloads)
+    
+    # 3. Hit API
+    from api.endpoints import SUBMIT_DRAFT_AKSEPTASI
+    logger.info(f"[{tc_id}] Submitting draft akseptasi with blacklisted NIK...")
+    res_api = api_client.post(SUBMIT_DRAFT_AKSEPTASI, payload)
+    
+    # 4. Assert response
+    evidence_collector.add_api_evidence(tc_id, "Submit Draft (Blacklist)", SUBMIT_DRAFT_AKSEPTASI, payload, res_api.json() if res_api.content else res_api.text, res_api.status_code)
+    assert res_api.status_code != 200, f"Expected rejection, but got 200 OK"
+    assert "Akseptasi Ditolak, Debitur dalam Status Blacklist Askrindo" in res_api.text, f"Expected blacklist message not found in response: {res_api.text}"
+    
+    meta["status"] = "Passed"
+    evidence_collector.set_test_status(tc_id, "Passed")
+    state.pop("master_ktp", None)
+    
+    logger.info(f"[{tc_id}] Blacklist verification passed.")
+    evidence_collector.set_test_status(tc_id, meta["status"])
+    return True
+
+def run_unblacklist_debitur_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta):
+    from db.acs_client import execute_acs_query, execute_acs_update
+    from db.queries import QUERY_GET_BLACKLISTED_KTP, QUERY_ACS_UPDATE_BLACKLIST, QUERY_CANCEL_ACTIVE_SUBMISSIONS
+    logger.info(f"[{tc_id}] Menjalankan skenario Recovery Blacklist (IS_BLACKLIST = 0)...")
+    
+    # 1. Ambil KTP dari ACS
+    res = execute_acs_query(QUERY_GET_BLACKLISTED_KTP)
+    if not res or not res[0].get('ID_NO'):
+        logger.error("Tidak ada data KTP blacklist di DB ACS UAT.")
+        meta["status"] = "Failed"
+        evidence_collector.set_test_status(tc_id, "Failed")
+        return
+    ktp = res[0]['ID_NO']
+    logger.info(f"[{tc_id}] Ditemukan KTP: {ktp}")
+    
+    # 2. Cleanup PostgreSQL (Cancel active submissions)
+    db_client.execute_update(QUERY_CANCEL_ACTIVE_SUBMISSIONS, (ktp,))
+    logger.info(f"[{tc_id}] Membatalkan seluruh pengajuan aktif untuk KTP {ktp} di PostgreSQL...")
+    
+    # 3. Patch ACS ke 0
+    execute_acs_update(QUERY_ACS_UPDATE_BLACKLIST, (0, ktp))
+    logger.info(f"[{tc_id}] Patching IS_BLACKLIST = 0 di ACS Staging untuk KTP {ktp}...")
+    import time
+    time.sleep(3) # Tunggu sync
+    
+    # 4. Inject KTP ke state dan jalankan E2E Payment
+    state["master_ktp"] = ktp
+    try:
+        run_payment_e2e_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta, skip_ui_validation=False)
+    finally:
+        # 5. Rollback ACS ke 1
+        execute_acs_update(QUERY_ACS_UPDATE_BLACKLIST, (1, ktp))
+        logger.info(f"[{tc_id}] Rollback IS_BLACKLIST = 1 di ACS Staging untuk KTP {ktp} selesai.")

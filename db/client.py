@@ -80,3 +80,23 @@ class DatabaseClient:
             if self.connection:
                 self.connection.rollback()
             raise
+
+    def execute_update(self, query: str, params: Optional[tuple] = None) -> int:
+        """
+        Execute an UPDATE, INSERT, or DELETE query and commit the transaction.
+        Returns the number of affected rows.
+        """
+        if not self.connection:
+            self.connect()
+        try:
+            with self.connection.cursor() as cursor:
+                if params:
+                    cursor.execute(query, params)
+                else:
+                    cursor.execute(query)
+                self.connection.commit()
+                return cursor.rowcount
+        except Exception as e:
+            logger.error(f"Error executing update: {e}")
+            self.connection.rollback()
+            return 0

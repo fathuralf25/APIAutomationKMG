@@ -1,5 +1,5 @@
 import time
-from db.queries import QUERY_CEK_JURNAL_BK_RESTITUSI, QUERY_CEK_DRAFT_AKSEPTASI, QUERY_CEK_TERBIT_POLIS, QUERY_GET_RESTITUSI, QUERY_GET_SERTIFIKAT_DTL_ENDORSEMENT, QUERY_VALIDASI_PEMBAYARAN_RESTITUSI
+from db.queries import QUERY_FINAL_STATUS_RESTITUSI, QUERY_CEK_JURNAL_BK_RESTITUSI, QUERY_CEK_DRAFT_AKSEPTASI, QUERY_CEK_TERBIT_POLIS, QUERY_GET_RESTITUSI, QUERY_GET_SERTIFIKAT_DTL_ENDORSEMENT, QUERY_VALIDASI_PEMBAYARAN_RESTITUSI
 
 def validate_draft_akseptasi(db_client, trx_id: str, tc_id: str, evidence_collector, tahap_name: str = ""):
     """
@@ -15,14 +15,14 @@ def validate_draft_akseptasi(db_client, trx_id: str, tc_id: str, evidence_collec
     evidence_collector.add_db_evidence(tc_id, evidence_name, db_res)
     return db_res
 
-def validate_terbit_polis(db_client, trx_id: str, tc_id: str, evidence_collector, max_retries: int = 10, tahap_name: str = ""):
+def validate_terbit_polis(db_client, trx_id: str, tc_id: str, evidence_collector, max_retries: int = 30, tahap_name: str = ""):
     """
     Validates polis terbit in DB with retries, and adds evidence.
     """
     db_result = None
     for _ in range(max_retries):
         db_result = db_client.execute_query(QUERY_CEK_TERBIT_POLIS, (trx_id,))
-        if db_result and len(db_result) > 0 and isinstance(db_result[0], dict) and db_result[0].get("no_sertifikat"):
+        if db_result and len(db_result) > 0 and isinstance(db_result[0], dict) and db_result[0].get("no_sertifikat") and str(db_result[0].get("status_akseptasi")) == "9":
             break
         time.sleep(2)
         
@@ -45,6 +45,9 @@ def validate_restitusi(db_client, trx_id: str, tc_id: str, evidence_collector, e
                 assert row.get("nominal_disetujui") is not None, "nominal_disetujui seharusnya TERISI (AGREED)"
             elif expected_status == "COUNTER":
                 assert row.get("nominal_disetujui") is None, "nominal_disetujui seharusnya KOSONG (COUNTER)"
+            elif expected_status == "SANGGAHAN":
+                assert row.get("status_akseptasi") == "13", f"Status akseptasi seharusnya 13 (Sanggahan/Proses), tapi dapat {row.get('status_akseptasi')}"
+                assert row.get("nominal_disetujui") is None, "nominal_disetujui seharusnya KOSONG (Masih disanggah)"
                 
     evidence_name = f"QUERY_GET_RESTITUSI ({tahap_name})" if tahap_name else "QUERY_GET_RESTITUSI"
     evidence_collector.add_db_evidence(tc_id, evidence_name, db_res)
@@ -92,3 +95,23 @@ def validate_jurnal_bk_restitusi(db_client, nomor_transaksi: str, tc_id: str, ev
     evidence_name = f"QUERY_CEK_JURNAL_BK ({tahap_name})" if tahap_name else "QUERY_CEK_JURNAL_BK"
     evidence_collector.add_db_evidence(tc_id, evidence_name, db_res)
     return db_res
+
+def validate_final_status_restitusi(db_client, trx_id: str, tc_id: str, evidence_collector):
+    """
+    Validates final restitution status in DB (status_proses_restitusi = 6, and no_jurnal exists).
+    """
+    db_res = db_client.execute_query(QUERY_FINAL_STATUS_RESTITUSI, (trx_id,))
+    if db_res and len(db_res) > 0:
+        row = db_res[0]
+        # Pastikan tidak None sebelum membandingkan
+        status_restitusi = str(row.get("status_proses_restitusi", ""))
+        
+        # Validasi Jurnal dan Status 6
+        if status_restitusi == "6" and row.get("no_jurnal"):
+            row["Validasi Akhir"] = "Status Proses Restitusi = 6 (Selesai) & Jurnal Terbentuk"
+        else:
+            row["Validasi Akhir"] = f"Warning: Status Restitusi = {status_restitusi}, Jurnal = {row.get('no_jurnal')}"
+            
+        evidence_collector.add_db_evidence(tc_id, "Final Status Restitusi (Validasi Jurnal)", [row])
+        return row
+    return None

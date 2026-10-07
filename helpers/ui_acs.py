@@ -159,8 +159,8 @@ def check_polis_in_acs(nomor_polis: str) -> str:
             # 1. Extract No Nota
             page.wait_for_timeout(2000)
             
-            # Find the paragraph containing /GJ-
-            no_nota_el = page.locator("p", has_text="/GJ-").first
+            # Find the element containing /GJ-
+            no_nota_el = page.get_by_text(re.compile(r'/GJ-')).first
             no_nota = ""
             if no_nota_el.count() > 0:
                 no_nota = no_nota_el.inner_text().strip()

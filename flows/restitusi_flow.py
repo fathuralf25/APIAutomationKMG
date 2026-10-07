@@ -1,13 +1,13 @@
 import time
 
 from db.acs_client import execute_acs_update
-from db.queries import QUERY_ACS_UPDATE_PREMIUM_PAIDOFF, QUERY_GET_RESTITUSI
+from db.queries import QUERY_GET_SERTIFIKAT_DTL_ENDORSEMENT, QUERY_ACS_UPDATE_PREMIUM_PAIDOFF, QUERY_GET_RESTITUSI
 from helpers.restitusi_payloads import (
     build_restitusi_submit_payload,
     build_restitusi_confirmation_payload,
     build_restitusi_dispute_payload
 )
-from validators.db_validator import validate_draft_akseptasi, validate_restitusi, validate_sertifikat_dtl
+from validators.db_validator import validate_draft_akseptasi, validate_restitusi, validate_sertifikat_dtl, validate_final_status_restitusi
 from validators.ui_validator import validate_polis_ui_and_qr
 from helpers.ui_acs import check_polis_in_acs, check_sor_in_acs
 from helpers.ui_fms import create_jurnal_bbk_restitusi
@@ -19,7 +19,7 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-def run_restitusi_flow(api_client, db_client, tc_id, nomor_transaksi, nomor_loan, policy_no, premi, tenor, evidence_collector, plus_days, expect_sanggahan=False, mock_paid_off=True, fake_loan=False, transaction_type="REFUND", overcharge=False, skip_ui=False, double_submit=False):
+def run_restitusi_flow(api_client, db_client, tc_id, nomor_transaksi, nomor_loan, policy_no, premi, tenor, evidence_collector, plus_days, expect_sanggahan=False, mock_paid_off=True, fake_loan=False, transaction_type="REFUND", overcharge=False, skip_ui=False, double_submit=False, is_hold=False, illegal_dispute=False, undercharge_confirm=False, illegal_confirm=False):
     """
     Executes the Restitusi Flow handling both happy paths and negative cases.
     """
@@ -39,7 +39,7 @@ def run_restitusi_flow(api_client, db_client, tc_id, nomor_transaksi, nomor_loan
     evidence_collector.add_api_evidence(tc_id, "Submit Restitusi", RESTITUSI_SUBMIT, submit_payload, res_submit.json(), res_submit.status_code)
     
     # Handle Negative Cases early exit
-    if not mock_paid_off or fake_loan or transaction_type != "REFUND" or overcharge:
+    if (not mock_paid_off and not is_hold) or fake_loan or transaction_type != "REFUND" or overcharge:
         assert res_submit.status_code != 200, f"Expected error for negative case, but got 200 OK: {res_submit.text}"
         logger.info(f"[{tc_id}] Negative test passed with status {res_submit.status_code}: {res_submit.text}")
         return True
@@ -57,13 +57,73 @@ def run_restitusi_flow(api_client, db_client, tc_id, nomor_transaksi, nomor_loan
         logger.info(f"[{tc_id}] Double submit test passed with status {res_submit_2.status_code}: {res_submit_2.text}")
         return True
     
-    # Get nominal from Askrindo calculation via DB validation (simulate the automated webhook calculation)
-    # We query the DB to get the calculated values from backend automatically
-    time.sleep(3) # Wait for backend calculation
-    # Only use DB validation internally here, we don't need to add it to the report yet (use dummy collector)
+    # --- HANDLING HOLD FLOW ---
+    if is_hold:
+        logger.info(f"[{tc_id}] Memeriksa status Hold (12) karena premi belum lunas...")
+        # Check DB for status 12
+        time.sleep(3)
+        db_res = db_client.execute_query(QUERY_GET_RESTITUSI, (nomor_transaksi,))
+        # Assert message from api
+        assert "diproses setelah status premi terkonfirmasi lunas" in res_submit.text, f"Expected hold message not found: {res_submit.text}"
+        
+        logger.info(f"[{tc_id}] Patching premium ke Lunas...")
+        execute_acs_update(QUERY_ACS_UPDATE_PREMIUM_PAIDOFF, (policy_no,))
+        
+        logger.info(f"[{tc_id}] Menunggu scheduler memproses (Status 12 -> 13)...")
+        status_13_reached = False
+        for _ in range(30):
+            time.sleep(10)
+            check_q = "SELECT status_akseptasi FROM t_sp2k_submission WHERE nomor_transaksi = %s"
+            curr = db_client.execute_query(check_q, (nomor_transaksi,))
+            if curr and str(curr[0].get('status_akseptasi')) == '13':
+                status_13_reached = True
+                break
+        assert status_13_reached, "Status tidak berubah ke 13 setelah 5 menit"
+        logger.info(f"[{tc_id}] Status berhasil berubah ke 13, melanjutkan flow normal...")
+
+    # --- GET KALKULASI ASKRINDO ---
+    time.sleep(3)
     db_res = db_client.execute_query(QUERY_GET_RESTITUSI, (nomor_transaksi,))
-    
     kalkulasi_askrindo = submit_payload["nilai_pengajuan"]
+    
+    # --- HANDLING UNDERCHARGE CONFIRM (TC-59) ---
+    if undercharge_confirm:
+        logger.info(f"[{tc_id}] Melakukan konfirmasi dengan nilai lebih rendah dari pengajuan...")
+        conf_value = float(kalkulasi_askrindo) - 10000
+        conf_payload = build_restitusi_confirmation_payload(nomor_loan, "DISETUJUI", nilai=conf_value)
+        res_conf = api_client.post(RESTITUSI_CONFIRMATION, conf_payload)
+        assert res_conf.status_code == 200, f"Confirmation undercharge failed: {res_conf.text}"
+        evidence_collector.add_api_evidence(tc_id, "Konfirmasi Lebih Rendah", RESTITUSI_CONFIRMATION, conf_payload, res_conf.json(), res_conf.status_code)
+        
+        time.sleep(2)
+        validate_restitusi(db_client, nomor_transaksi, tc_id, evidence_collector, expected_status="AGREED", tahap_name="Final Validation (Lowest Value)")
+        return True
+        
+    # --- HANDLING ILLEGAL DISPUTE (TC-61) ---
+
+    # --- HANDLING ILLEGAL CONFIRM (TC-64) ---
+    if illegal_confirm:
+        logger.info(f"[{tc_id}] Memaksa Konfirmasi (DISETUJUI) dengan nilai > pengajuan awal...")
+        illegal_value = float(kalkulasi_askrindo) + 50000
+        conf_payload = build_restitusi_confirmation_payload(nomor_loan, "DISETUJUI", nilai=illegal_value)
+        res_conf = api_client.post(RESTITUSI_CONFIRMATION, conf_payload)
+        
+        assert res_conf.status_code != 200, f"Expected illegal confirm to fail, but got 200 OK: {res_conf.text}"
+        evidence_collector.add_api_evidence(tc_id, "Konfirmasi Ilegal (Negative)", RESTITUSI_CONFIRMATION, conf_payload, res_conf.json() if res_conf.content else res_conf.text, res_conf.status_code)
+        return True
+
+    if illegal_dispute:
+
+        logger.info(f"[{tc_id}] Memaksa Sanggahan Ilegal dengan nilai > pengajuan awal...")
+        illegal_value = float(kalkulasi_askrindo) + 50000
+        conf_payload = build_restitusi_confirmation_payload(nomor_loan, "SANGGAHAN", nilai=illegal_value)
+        res_conf = api_client.post(RESTITUSI_CONFIRMATION, conf_payload)
+        
+        assert res_conf.status_code == 200, f"Expected 200 OK for illegal dispute recording, got: {res_conf.text}"
+        evidence_collector.add_api_evidence(tc_id, "Sanggahan Ilegal (Tertahan)", RESTITUSI_CONFIRMATION, conf_payload, res_conf.json() if res_conf.content else res_conf.text, res_conf.status_code)
+        time.sleep(2)
+        validate_restitusi(db_client, nomor_transaksi, tc_id, evidence_collector, expected_status="SANGGAHAN", tahap_name="Validasi Sanggahan Tertahan")
+        return True
     
     if not expect_sanggahan:
         # Step 3 (Happy Path): Konfirmasi Setuju
@@ -121,6 +181,15 @@ def run_restitusi_flow(api_client, db_client, tc_id, nomor_transaksi, nomor_loan
     validate_draft_akseptasi(db_client, nomor_transaksi, tc_id, evidence_collector, tahap_name="Final Restitusi State")
     
     # Validasi Jurnal & Sertifikat DTL Endorsement
+    logger.info("Menunggu data endorsement (/C) masuk ke database t_sertifikat_dtl...")
+    for i in range(15):
+        db_res = db_client.execute_query(QUERY_GET_SERTIFIKAT_DTL_ENDORSEMENT, (policy_no,))
+        if db_res and len(db_res) > 0:
+            logger.info("Data endorsement (/C) telah berhasil digenerate di Database!")
+            break
+        logger.info(f"Percobaan ke-{i+1}/15: Data endorsement belum ada di DB. Menunggu 5 detik...")
+        time.sleep(5)
+        
     validate_sertifikat_dtl(db_client, policy_no, tc_id, evidence_collector, tahap_name="Endorsement Batal/Refund")
 
     # Detail API hit
@@ -226,6 +295,9 @@ def run_restitusi_flow(api_client, db_client, tc_id, nomor_transaksi, nomor_loan
                 evidence_collector.add_ui_evidence(tc_id, "ACS SOR", path)
         except Exception as e:
             logger.error(f"Failed to check SOR in ACS UI: {e}")
+
+    logger.info(f"[{tc_id}] Memvalidasi Final Status Restitusi dan No Jurnal di Database...")
+    validate_final_status_restitusi(db_client, nomor_transaksi, tc_id, evidence_collector)
 
     # Step 7: Verifikasi Email Notifikasi Restitusi
     if GMAIL_USERNAME and GMAIL_APP_PASSWORD:

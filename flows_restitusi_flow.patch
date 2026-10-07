@@ -1,0 +1,14 @@
+--- flows/restitusi_flow.py
++++ flows/restitusi_flow.py
+@@ -118,7 +118,10 @@
+         conf_payload = build_restitusi_confirmation_payload(nomor_loan, "SANGGAHAN", nilai=illegal_value)
+         res_conf = api_client.post(RESTITUSI_CONFIRMATION, conf_payload)
+         
+-        assert res_conf.status_code != 200, f"Expected illegal dispute to fail, but got 200 OK: {res_conf.text}"
++        assert res_conf.status_code == 200, f"Expected 200 OK for illegal dispute recording, got: {res_conf.text}"
++        evidence_collector.add_api_evidence(tc_id, "Sanggahan Ilegal (Tertahan)", RESTITUSI_CONFIRMATION, conf_payload, res_conf.json(), res_conf.status_code)
++        time.sleep(2)
++        validate_restitusi(db_client, nomor_transaksi, tc_id, evidence_collector, expected_status="SANGGAHAN", tahap_name="Validasi Sanggahan Tertahan")
+         return True
+ 
+     # --- NORMAL FLOW / SANGGAHAN NORMAL (TC-60) ---

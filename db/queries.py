@@ -6,7 +6,7 @@ SELECT
     d.status_kepegawaian AS debitur_status_kepegawaian,
     d.no_telepon, d.no_handphone, d.nama_ibu_kandung,
 
-    s.id_sp2k_submission, s.nomor_transaksi, s.no_aplikasi, s.kode_bank,
+    s.id_sp2k_submission, s.nomor_transaksi, s.status_akseptasi, s.no_aplikasi, s.kode_bank,
     s.kode_uker, s.request_type, s.status_akseptasi, s.id_product,
     s.id_product_group, s.jenis_covering, s.id_askrindo_branch,
     s.id_broker_agent, s.pks_id,
@@ -40,7 +40,7 @@ WHERE s.nomor_transaksi = %s;
 QUERY_CEK_TERBIT_POLIS = """
 SELECT 
     -- 1. Informasi Transaksi & Debitur
-    s.nomor_transaksi,
+    s.nomor_transaksi, s.status_akseptasi,
     d.nama_debitur,
     
     -- 2. Kolom dari t_sertifikat
@@ -82,7 +82,7 @@ SELECT
     a.nominal_pengajuan_mitra,
     a.nominal_kalkulasi_askrindo,
     a.nominal_disetujui,
-    a.nominal_bayar 
+    a.nominal_bayar, b.status_akseptasi 
 FROM t_pembayaran a
 JOIN t_sp2k_submission b ON a.id_sp2k_submission = b.id_sp2k_submission 
 WHERE b.nomor_transaksi = %s
@@ -151,4 +151,47 @@ JOIN t_pembayaran c
 WHERE 
     a.nomor_transaksi = %s
     AND c.transaction_type = 'REFUND';
+"""
+
+# Query to get a blacklisted ID_NO from ACS Staging
+QUERY_GET_BLACKLISTED_KTP = """
+SELECT TOP 1 ID_NO 
+FROM CUSTOMER.CUS_DEBITUR WITH (NOLOCK) 
+WHERE IS_BLACKLIST = 1 AND ID_NO IS NOT NULL AND LEN(ID_NO) = 16 AND ID_NO NOT LIKE '%[^0-9]%' AND ID_NO != '0000000000000000'
+GROUP BY ID_NO
+HAVING COUNT(*) = 1;
+"""
+
+QUERY_FINAL_STATUS_RESTITUSI = """
+SELECT 
+    a.id_sp2k_submission,
+    c.no_jurnal,
+    a.nomor_transaksi,
+    a.status_akseptasi,
+    a.nominal_premi_askrindo,
+    a.nominal_premi_bank,
+    a.status_proses_restitusi 
+FROM t_sp2k_submission a 
+JOIN t_sertifikat b ON a.id_sp2k_submission = b.id_submission 
+JOIN t_sertifikat_dtl c ON b.sertifikat_id = c.sertifikat_id  
+WHERE a.nomor_transaksi = %s
+ORDER BY c.created_date DESC;
+"""
+
+QUERY_ACS_UPDATE_BLACKLIST = """
+UPDATE CUSTOMER.CUS_DEBITUR 
+SET IS_BLACKLIST = %d 
+WHERE ID_NO = %s;
+"""
+
+QUERY_CANCEL_ACTIVE_SUBMISSIONS = """
+UPDATE t_sp2k_submission
+SET status_akseptasi = '11'
+WHERE id_sp2k_submission IN (
+    SELECT s.id_sp2k_submission
+    FROM t_sp2k_submission s
+    JOIN t_akseptasi_askred a ON s.id_sp2k_submission = a.id_submission
+    JOIN m_debitur d ON a.id_debitur = d.id_debitur
+    WHERE d.ktp = %s AND s.status_akseptasi NOT IN ('9', '11')
+);
 """

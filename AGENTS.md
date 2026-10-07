@@ -255,3 +255,23 @@ Business values must be generated through dedicated generator modules.
 
 - Never use absolute paths outside the project workspace like `C://downloads/`.
 - When a file is uploaded by the user, read it directly from the workspace folder, save it locally in the project directory, and extract/process it directly from there.
+
+## Blacklist Debitur
+- If a submission (Submit Draft Akseptasi) is made using a KTP (NIK/ID_NO) that is listed as blacklisted in Askrindo, the API must reject it.
+- Database check (ACS Staging MSSQL): `SELECT d.DEBITUR_ID, d.CIF_NO, d.IS_BLACKLIST, d.ID_NO FROM CUSTOMER.CUS_DEBITUR d WITH (NOLOCK) WHERE IS_BLACKLIST = 1`
+- Expected Response Message: "Akseptasi Ditolak, Debitur dalam Status Blacklist Askrindo"
+
+## Restitusi - Penyesuaian Nilai
+- The final approved Restitusi value will always be the **smallest** among:
+  1. Askrindo's Calculated Value
+  2. Mitra's Requested Value (Pengajuan AAP)
+  3. Confirmation Input Value
+- Scenario 1 (Direct Agreement at Lower Value): Initial request < Askrindo calculation, but Confirmation input is even lower. The system must record and approve the Confirmation input value.
+- Scenario 2 (Sanggahan Flow): Initial request > Askrindo calculation. This triggers a Sanggahan. If Sanggahan continues >1x until the inputted value is <= Askrindo calculation, that value becomes the final approved value.
+- DB Validation (`QUERY_GET_RESTITUSI` etc.) must be run at every step of the submission and confirmation to assert correct values are recorded.
+
+## Restitusi - Fitur Hold (Premi Belum Lunas)
+- If a Restitusi is submitted but the Premium has NOT been marked as paid (Lunas) yet, the Restitusi request is **held**.
+- The API responds with HTTP 200. Expected Response Message: "Pengajuan restitusi berhasil diterima dan akan diproses setelah status premi terkonfirmasi lunas".
+- Expected DB `status_akseptasi` = `12` (Hold).
+- When the Premium is eventually paid (patched in DB) and scheduler runs (or re-submit), the status should update to `13`.

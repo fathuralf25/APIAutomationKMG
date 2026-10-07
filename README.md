@@ -217,11 +217,17 @@ pytest tests/test_restitusi.py -v
 
 **Run specific test case directly via pytest (tanpa file runner):**
 
-Anda bisa menjalankan spesifik Test Case (misal TC-45 atau TC-58) langsung melalui command line menggunakan flag `-k`.
+Anda bisa menjalankan spesifik Test Case langsung melalui command line menggunakan flag `-k`.
+Sangat disarankan untuk **menyebutkan file modul secara spesifik** (contoh: `test_all_scenarios.py` atau `test_restitusi.py`) dan **TIDAK** mengeksekusi direktori `tests/` secara keseluruhan, agar tidak terjadi *clash* memori data antar modul (misal *error* "NIK sudah terdaftar").
 
+Contoh menjalankan spesifik untuk rombongan skenario umum:
 ```bash
-pytest tests/test_all_scenarios.py -k "TC-45" -v
-pytest tests/test_restitusi.py -k "TC-58 or TC-59" -v
+TEST_ENV=uat pytest tests/test_all_scenarios.py -s -v -k "TC-58 or TC-65 or TC-66"
+```
+
+Contoh menjalankan spesifik untuk rombongan skenario Restitusi:
+```bash
+TEST_ENV=uat pytest tests/test_restitusi.py -s -v -k "TC-59 or TC-60 or TC-61 or TC-62 or TC-63 or TC-64"
 ```
 
 **What happens after execution?**

@@ -92,7 +92,7 @@ class ApiClient:
     def post(self, endpoint: str, payload: Dict[str, Any]) -> requests.Response:
         url = endpoint if endpoint.startswith("http") else f"{self.base_url}{endpoint}"
         logger.info(f"Executing POST {url}")
-        response = self.session.post(url, json=payload)
+        response = self.session.post(url, json=payload, timeout=30)
         self._log_request_response(response, payload)
         return response
 

@@ -11,7 +11,8 @@ def build_dynamic_payload(tc_id: str, api_group: str, state: dict, base_payloads
 
     if "a1" in api_group or "kalkulasi" in api_group:
         payload = deepcopy(base_payloads.get("kalkulator", {}))
-        payload["ktp"] = generate_ktp()
+        payload["ktp"] = state.get("master_ktp") or generate_ktp()
+        state["master_ktp"] = payload["ktp"]
         tanggal_rencana = today()
         tenor = 120
         
@@ -99,7 +100,8 @@ def build_dynamic_payload(tc_id: str, api_group: str, state: dict, base_payloads
         payload["tanggal_rencana_realisasi"] = tanggal_rencana
         payload["tanggal_akhir_asuransi"] = tanggal_akhir
         payload["tenor"] = tenor
-        payload["ktp"] = generate_ktp()
+        payload["ktp"] = state.get("master_ktp") or generate_ktp()
+        state["master_ktp"] = payload["ktp"]
         payload["tanggal_lahir"] = normal_tanggal_lahir
         payload["uang_pertanggungan"] = 50000000
         payload["usia"] = 27

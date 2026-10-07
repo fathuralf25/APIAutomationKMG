@@ -5,7 +5,7 @@ from helpers.payload_factory import build_dynamic_payload
 from utils.logger import get_logger
 from helpers.evidence_collector import evidence_collector
 from api.endpoints import KALKULATOR, SUBMIT_DRAFT_AKSEPTASI, INQUIRY_LOAN, OTORISASI, PAYMENT, PEMBATALAN
-from flows.e2e_flow import run_full_e2e_flow, run_pembatalan_bertahap_flow, run_payment_e2e_flow, run_batal_polis_flow, run_multi_fasilitas_flow, run_multi_fasilitas_complex_flow, run_multi_fasilitas_complex_payment_flow, run_multi_fasilitas_batal_flow, run_multi_fasilitas_akumulasi_response_flow
+from flows.e2e_flow import run_full_e2e_flow, run_pembatalan_bertahap_flow, run_payment_e2e_flow, run_batal_polis_flow, run_multi_fasilitas_flow, run_multi_fasilitas_complex_flow, run_multi_fasilitas_complex_payment_flow, run_multi_fasilitas_batal_flow, run_multi_fasilitas_akumulasi_response_flow, run_blacklist_debitur_flow, run_unblacklist_debitur_flow
 from validators.db_validator import validate_draft_akseptasi, validate_terbit_polis
 from validators.ui_validator import validate_polis_ui_and_qr
 
@@ -98,7 +98,7 @@ def test_dynamic_scenarios(tc_id, api_client, db_client, state, base_payloads):
     logger.info(f"Executing {tc_id} dynamically...")
     meta = TEST_METADATA.get(tc_id, {"tc_name": tc_id, "expected": "Sistem merespon dengan benar", "precondition": "", "api_group": ""})
     
-    negative_tcs = ["TC-2", "TC-3", "TC-7", "TC-9", "TC-11", "TC-13", "TC-14", "TC-15", "TC-16", "TC-17", "TC-18", "TC-19", "TC-21", "TC-22", "TC-23", "TC-24", "TC-25", "TC-26", "TC-27", "TC-32", "TC-33", "TC-34", "TC-35", "TC-38", "TC-40", "TC-42", "TC-43", "TC-44"]
+    negative_tcs = ["TC-2", "TC-3", "TC-7", "TC-9", "TC-11", "TC-13", "TC-14", "TC-15", "TC-16", "TC-17", "TC-18", "TC-19", "TC-21", "TC-22", "TC-23", "TC-24", "TC-25", "TC-26", "TC-27", "TC-32", "TC-33", "TC-34", "TC-35", "TC-38", "TC-40", "TC-42", "TC-43", "TC-44", "TC-58"]
     
     original_exp = meta["expected"].strip()
     
@@ -170,6 +170,16 @@ def test_dynamic_scenarios(tc_id, api_client, db_client, state, base_payloads):
             return
         elif tc_id == "TC-45":
             run_multi_fasilitas_akumulasi_response_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta)
+            return
+        elif tc_id == "TC-65":
+            run_payment_e2e_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta, skip_ui_validation=True)
+            return
+        elif tc_id == "TC-58":
+            run_blacklist_debitur_flow(tc_id, api_client, db_client, evidence_collector, meta, base_payloads)
+            return
+
+        elif tc_id == "TC-66":
+            run_unblacklist_debitur_flow(tc_id, api_client, db_client, state, base_payloads, evidence_collector, meta)
             return
 
         # 2. Normal Flow

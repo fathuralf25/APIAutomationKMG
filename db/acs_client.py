@@ -67,3 +67,18 @@ def wait_for_policy_in_acs(policy_no: str, max_retries: int = 60, delay_sec: int
         
     logger.error(f"Timeout: Policy {policy_no} not found in ACS DB after {max_retries * delay_sec} seconds.")
     return False
+
+def execute_acs_query(query: str, params: tuple = None) -> list:
+    conn = None
+    try:
+        conn = get_acs_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(query, params or ())
+        result = cursor.fetchall()
+        return result
+    except Exception as e:
+        logger.error(f"Error executing ACS query: {e}")
+        raise
+    finally:
+        if conn:
+            conn.close()
